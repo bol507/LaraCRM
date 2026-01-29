@@ -9,8 +9,21 @@ Route::get('/user', function (Request $request) {
 })->middleware('auth:sanctum');
 
 
+// Rutas PÚBLICAS (sin autenticación)
 Route::prefix('auth')->group(function () {
-    Route::post('/login', [LoginController:: class, 'login']);
+    Route::post('/login', [LoginController::class, 'login']);
     Route::post('/logout', [LoginController::class, 'logout']);
-    Route::get('/me', [LoginController::class, 'me']);
+    
+
+})->middleware('jwt') 
+    ->group(function () {
+        Route::get('/me', [LoginController::class, 'me']);
+    });
+
+    
+// Otras rutas protegidas de tu CRM
+Route::middleware('jwt')->group(function () {
+    //Route::get('/dashboard', ...);
+    //Route::get('/clients', ...);
+    // etc.
 });

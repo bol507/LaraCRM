@@ -15,4 +15,6 @@ class VtigerUser extends Model
     protected $fillable = [];
     protected $guarded = []; // O define explícitamente los campos si prefieres
     protected $visible = ['id', 'user_name', 'first_name', 'last_name', 'email1', 'salt', 'user_password', 'status'];
+
+    
 }

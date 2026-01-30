@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Auth\LoginController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -23,7 +24,7 @@ Route::prefix('auth')->group(function () {
     
 // Otras rutas protegidas de tu CRM
 Route::middleware('jwt')->group(function () {
-    //Route::get('/dashboard', ...);
-    //Route::get('/clients', ...);
-    // etc.
+    Route::get('/clients', [ClientController::class, 'index']);
+    Route::get('/clients/{id}', [ClientController::class, 'show']);
+    Route::post('/clients', [ClientController::class, 'store']);
 });

@@ -131,6 +131,15 @@ return [
                 (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
+        'vtiger_testing' => [
+            'driver' => 'mysql',
+            'url' => env('DATABASE_URL'),
+            'host' => env('VTIGER_TEST_DB_HOST', '127.0.0.1'),
+            'port' => env('VTIGER_TEST_DB_PORT', '3306'),
+            'database' => env('VTIGER_TEST_DB_DATABASE', 'forge'),
+            'username' => env('VTIGER_TEST_DB_USERNAME', 'forge'),
+            'password' => env('VTIGER_TEST_DB_PASSWORD', ''),
+        ],
 
     ],
 
@@ -167,7 +176,7 @@ return [
 
         'options' => [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
-            'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-database-'),
+            'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')) . '-database-'),
             'persistent' => env('REDIS_PERSISTENT', false),
         ],
 

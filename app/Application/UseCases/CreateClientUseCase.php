@@ -11,8 +11,8 @@ class CreateClientUseCase
         private readonly ClientRepositoryInterface $clientRepository
     ) {}
 
-    public function execute(CreateClientRequest $request): int
+   public function execute(CreateClientRequest $request, int $userId): int
     {
-        return $this->clientRepository->create($request);
+        return $this->clientRepository->create($request, $userId);
     }
 }

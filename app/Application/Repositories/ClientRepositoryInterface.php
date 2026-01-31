@@ -15,5 +15,5 @@ interface ClientRepositoryInterface
         ?array $filters = null
     ): LengthAwarePaginator;
     public function findById(int $id): ?Client;
-    public function create(CreateClientRequest $request): int;
+    public function create(CreateClientRequest $request, int $userId): int;
 }

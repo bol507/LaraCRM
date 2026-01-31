@@ -189,26 +189,34 @@ class VtigerClientRepository implements ClientRepositoryInterface
         ) : null;
     }
 
-    public function create(CreateClientRequest $request): int
+    public function create(CreateClientRequest $request, int $userId): int
     {
         DB::connection('vtiger')->beginTransaction();
 
         try {
-            // Insert client in vtiger_crmentity
-            $crmid = DB::connection('vtiger')
+            $nextCrmId = $this->getNextCrmId();
+            $currentTime = now()->format('Y-m-d H:i:s');
+            $accountNo = $request->account_no ?? $this->generateAccountNumber($nextCrmId);
+            DB::connection('vtiger')
                 ->table('vtiger_crmentity')
-                ->insertGetId([
+                ->insert([
+                    'crmid' => $nextCrmId,
                     'deleted' => 0,
-                    'setype' => 'Accounts'
+                    'setype' => 'Accounts',
+                    'createdtime' => $currentTime,
+                    'modifiedtime' => $currentTime,
+                    'smcreatorid' => $userId,
+                    'smownerid' => $userId,
+                    'modifiedby' => $userId
                 ]);
 
-            // Insert client in vtiger_account
+            
             DB::connection('vtiger')
                 ->table('vtiger_account')
                 ->insert([
-                    'accountid' => $crmid,
+                    'accountid' => $nextCrmId,
                     'accountname' => $request->accountname,
-                    'account_no' => $request->account_no,
+                    'account_no' => $accountNo,
                     'account_type' => $request->account_type,
                     'industry' => $request->industry,
                     'annualrevenue' => $request->annualrevenue,
@@ -229,12 +237,12 @@ class VtigerClientRepository implements ClientRepositoryInterface
                     'tags' => $request->tags,
                 ]);
 
-            // Insert client in vtiger_accountbillads
+            
             if ($this->hasBillingAddress($request)) {
                 DB::connection('vtiger')
                     ->table('vtiger_accountbillads')
                     ->insert([
-                        'accountaddressid' => $crmid,
+                        'accountaddressid' => $nextCrmId,
                         'bill_street' => $request->bill_street,
                         'bill_city' => $request->bill_city,
                         'bill_state' => $request->bill_state,
@@ -244,12 +252,12 @@ class VtigerClientRepository implements ClientRepositoryInterface
                     ]);
             }
 
-            // Insert client in vtiger_accountshipads
+           
             if ($this->hasShippingAddress($request)) {
                 DB::connection('vtiger')
                     ->table('vtiger_accountshipads')
                     ->insert([
-                        'accountaddressid' => $crmid,
+                        'accountaddressid' => $nextCrmId,
                         'ship_street' => $request->ship_street,
                         'ship_city' => $request->ship_city,
                         'ship_state' => $request->ship_state,
@@ -260,7 +268,7 @@ class VtigerClientRepository implements ClientRepositoryInterface
             }
 
             DB::connection('vtiger')->commit();
-            return $crmid;
+            return $nextCrmId;
         } catch (\Exception $e) {
             DB::connection('vtiger')->rollback();
             throw $e;
@@ -285,5 +293,26 @@ class VtigerClientRepository implements ClientRepositoryInterface
             !empty($request->ship_code) ||
             !empty($request->ship_country) ||
             !empty($request->ship_pobox);
+    }
+
+    private function getNextCrmId(): int
+    {
+        $maxCrmId = DB::connection('vtiger')->table('vtiger_crmentity')->max('crmid');
+        return $maxCrmId ? $maxCrmId + 1 : 1;
+    }
+
+    private function generateAccountNumber(int $crmid): string
+    {
+
+        return 'ACC-' . str_pad($crmid, 6, '0', STR_PAD_LEFT);
+    }
+
+  
+    private function accountNumberExists(string $accountNo): bool
+    {
+        return DB::connection('vtiger')
+            ->table('vtiger_account')
+            ->where('account_no', $accountNo)
+            ->exists();
     }
 }

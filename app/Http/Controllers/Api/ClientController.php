@@ -16,7 +16,7 @@ class ClientController extends Controller
     public function __construct(
         private readonly GetClientsUseCase $getClientsUseCase,
         private readonly GetClientByIdUseCase $getClientByIdUseCase,
-        private readonly CreateClientUseCase $createClientUseCase
+        private readonly CreateClientUseCase $createClientUseCase,
     ) {}
 
     public function index(Request $request)
@@ -55,7 +55,7 @@ class ClientController extends Controller
         return response()->json(ClientDto::fromEntity($client));
     }
 
-     public function store(Request $request)
+    public function store(Request $request)
     {
         // validate request
         $validator = Validator::make($request->all(), [
@@ -76,8 +76,14 @@ class ClientController extends Controller
             ], 422);
         }
 
+        $user = $request->attributes->get('auth_user');
+
+        if (!$user) {
+            return response()->json(['error' => 'Usuario no autenticado'], 401);
+        }
+
         $requestData = $request->all();
-        
+
         $createRequest = new CreateClientRequest(
             accountname: $requestData['accountname'],
             account_no: $requestData['account_no'] ?? null,
@@ -114,7 +120,7 @@ class ClientController extends Controller
             ship_pobox: $requestData['ship_pobox'] ?? null,
         );
 
-        $clientId = $this->createClientUseCase->execute($createRequest);
+        $clientId = $this->createClientUseCase->execute($createRequest, $user->id);
 
         return response()->json([
             'message' => 'Cliente creado exitosamente',

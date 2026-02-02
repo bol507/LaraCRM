@@ -3,6 +3,7 @@
 namespace App\Infrastructure\Repositories;
 
 use App\Application\DTOs\CreateClientRequest;
+use App\Application\DTOs\UpdateClientRequest;
 use App\Application\Repositories\ClientRepositoryInterface;
 use App\Domain\Entities\Client;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -210,7 +211,7 @@ class VtigerClientRepository implements ClientRepositoryInterface
                     'modifiedby' => $userId
                 ]);
 
-            
+
             DB::connection('vtiger')
                 ->table('vtiger_account')
                 ->insert([
@@ -237,7 +238,7 @@ class VtigerClientRepository implements ClientRepositoryInterface
                     'tags' => $request->tags,
                 ]);
 
-            
+
             if ($this->hasBillingAddress($request)) {
                 DB::connection('vtiger')
                     ->table('vtiger_accountbillads')
@@ -252,7 +253,7 @@ class VtigerClientRepository implements ClientRepositoryInterface
                     ]);
             }
 
-           
+
             if ($this->hasShippingAddress($request)) {
                 DB::connection('vtiger')
                     ->table('vtiger_accountshipads')
@@ -307,12 +308,164 @@ class VtigerClientRepository implements ClientRepositoryInterface
         return 'ACC-' . str_pad($crmid, 6, '0', STR_PAD_LEFT);
     }
 
-  
-    private function accountNumberExists(string $accountNo): bool
+    public function update(UpdateClientRequest $request, int $userId): bool
     {
-        return DB::connection('vtiger')
-            ->table('vtiger_account')
-            ->where('account_no', $accountNo)
-            ->exists();
+        DB::connection('vtiger')->beginTransaction();
+
+        try {
+            $currentTime = now()->format('Y-m-d H:i:s');
+
+            // 1. Actualizar vtiger_crmentity (modifiedtime, modifiedby)
+            DB::connection('vtiger')
+                ->table('vtiger_crmentity')
+                ->where('crmid', $request->id)
+                ->update([
+                    'modifiedtime' => $currentTime,
+                    'modifiedby' => $userId
+                ]);
+
+            // 2. Actualizar vtiger_account
+            DB::connection('vtiger')
+                ->table('vtiger_account')
+                ->where('accountid', $request->id)
+                ->update([
+                    'accountname' => $request->accountname,
+                    'account_no' => $request->account_no,
+                    'account_type' => $request->account_type,
+                    'industry' => $request->industry,
+                    'annualrevenue' => $request->annualrevenue,
+                    'rating' => $request->rating,
+                    'ownership' => $request->ownership,
+                    'siccode' => $request->siccode,
+                    'tickersymbol' => $request->tickersymbol,
+                    'phone' => $request->phone,
+                    'otherphone' => $request->otherphone,
+                    'email1' => $request->email1,
+                    'email2' => $request->email2,
+                    'website' => $request->website,
+                    'fax' => $request->fax,
+                    'employees' => $request->employees,
+                    'emailoptout' => $request->emailoptout,
+                    'notify_owner' => $request->notify_owner,
+                    'isconvertedfromlead' => $request->isconvertedfromlead,
+                    'tags' => $request->tags,
+                ]);
+
+            // 3. Actualizar dirección de facturación
+            $this->updateBillingAddress($request->id, $request);
+
+            // 4. Actualizar dirección de envío  
+            $this->updateShippingAddress($request->id, $request);
+
+            DB::connection('vtiger')->commit();
+            return true;
+        } catch (\Exception $e) {
+            DB::connection('vtiger')->rollback();
+            throw $e;
+        }
     }
+
+    private function updateBillingAddress(int $accountId, UpdateClientRequest $request): void
+    {
+        $existing = DB::connection('vtiger')
+            ->table('vtiger_accountbillads')
+            ->where('accountaddressid', $accountId)
+            ->first();
+
+        $data = [
+            'bill_street' => $request->bill_street,
+            'bill_city' => $request->bill_city,
+            'bill_state' => $request->bill_state,
+            'bill_code' => $request->bill_code,
+            'bill_country' => $request->bill_country,
+            'bill_pobox' => $request->bill_pobox,
+        ];
+
+        if ($existing) {
+            DB::connection('vtiger')
+                ->table('vtiger_accountbillads')
+                ->where('accountaddressid', $accountId)
+                ->update($data);
+        } elseif ($this->hasBillingAddressData($data)) {
+            DB::connection('vtiger')
+                ->table('vtiger_accountbillads')
+                ->insert(array_merge(['accountaddressid' => $accountId], $data));
+        }
+    }
+
+    private function updateShippingAddress(int $accountId, UpdateClientRequest $request): void
+    {
+        $existing = DB::connection('vtiger')
+            ->table('vtiger_accountshipads')
+            ->where('accountaddressid', $accountId)
+            ->first();
+
+        $data = [
+            'ship_street' => $request->ship_street,
+            'ship_city' => $request->ship_city,
+            'ship_state' => $request->ship_state,
+            'ship_code' => $request->ship_code,
+            'ship_country' => $request->ship_country,
+            'ship_pobox' => $request->ship_pobox,
+        ];
+
+        if ($existing) {
+            DB::connection('vtiger')
+                ->table('vtiger_accountshipads')
+                ->where('accountaddressid', $accountId)
+                ->update($data);
+        } elseif ($this->hasShippingAddressData($data)) {
+            DB::connection('vtiger')
+                ->table('vtiger_accountshipads')
+                ->insert(array_merge(['accountaddressid' => $accountId], $data));
+        }
+    }
+
+    private function hasBillingAddressData(array $data): bool
+    {
+        return !empty($data['bill_street']) ||
+            !empty($data['bill_city']) ||
+            !empty($data['bill_state']) ||
+            !empty($data['bill_code']) ||
+            !empty($data['bill_country']) ||
+            !empty($data['bill_pobox']);
+    }
+
+    private function hasShippingAddressData(array $data): bool
+    {
+        return !empty($data['ship_street']) ||
+            !empty($data['ship_city']) ||
+            !empty($data['ship_state']) ||
+            !empty($data['ship_code']) ||
+            !empty($data['ship_country']) ||
+            !empty($data['ship_pobox']);
+    }
+
+
+    public function delete(int $id): bool
+{
+    try {
+        $existing = DB::connection('vtiger')
+            ->table('vtiger_crmentity')
+            ->where('crmid', $id)
+            ->where('setype', 'Accounts')
+            ->where('deleted', 0)
+            ->first();
+
+        if (!$existing) {
+            return false; 
+        }
+
+     
+        DB::connection('vtiger')
+            ->table('vtiger_crmentity')
+            ->where('crmid', $id)
+            ->update(['deleted' => 1]);
+
+        return true;
+
+    } catch (\Exception $e) {
+        throw $e;
+    }
+}
 }

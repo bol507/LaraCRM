@@ -7,6 +7,8 @@ use App\Application\DTOs\CreateClientRequest;
 use App\Application\DTOs\UpdateClientRequest;
 use App\Application\UseCases\CreateClientUseCase;
 use App\Application\UseCases\DeleteClientUseCase;
+use App\Application\UseCases\FindClientByAccountNameUseCase;
+use App\Application\UseCases\FindClientsByNameOrEmailUseCase;
 use App\Http\Controllers\Controller;
 use App\Application\UseCases\GetClientsUseCase;
 use App\Application\UseCases\GetClientByIdUseCase;
@@ -22,6 +24,8 @@ class ClientController extends Controller
         private readonly CreateClientUseCase $createClientUseCase,
         private readonly UpdateClientUseCase $updateClientUseCase,
         private readonly DeleteClientUseCase $deleteClientUseCase,
+        private readonly FindClientsByNameOrEmailUseCase $findClientsByNameOrEmailUseCase,
+        private readonly FindClientByAccountNameUseCase $findClientByAccountNameUseCase,
     ) {}
 
     public function index(Request $request)
@@ -219,5 +223,35 @@ class ClientController extends Controller
         }
 
         return response()->json(['error' => 'Cliente no encontrado o ya eliminado'], 404);
+    }
+
+    public function search(Request $request)
+    {
+        $searchTerm = $request->get('q', '');
+
+        if (strlen($searchTerm) < 2) {
+            return response()->json(['data' => []]);
+        }
+
+        $clients = $this->findClientsByNameOrEmailUseCase->execute($searchTerm);
+
+        return response()->json(['data' => $clients]);
+    }
+
+    public function findByAccountName(Request $request)
+    {
+        $accountName = $request->get('accountname');
+
+        if (!$accountName) {
+            return response()->json(['error' => 'Nombre de cuenta requerido'], 422);
+        }
+
+        $client = $this->findClientByAccountNameUseCase->execute($accountName);
+
+        if (!$client) {
+            return response()->json(['error' => 'Cliente no encontrado'], 404);
+        }
+
+        return response()->json(['data' => $client]);
     }
 }

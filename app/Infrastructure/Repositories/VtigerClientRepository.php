@@ -443,29 +443,84 @@ class VtigerClientRepository implements ClientRepositoryInterface
 
 
     public function delete(int $id): bool
-{
-    try {
-        $existing = DB::connection('vtiger')
-            ->table('vtiger_crmentity')
-            ->where('crmid', $id)
-            ->where('setype', 'Accounts')
-            ->where('deleted', 0)
+    {
+        try {
+            $existing = DB::connection('vtiger')
+                ->table('vtiger_crmentity')
+                ->where('crmid', $id)
+                ->where('setype', 'Accounts')
+                ->where('deleted', 0)
+                ->first();
+
+            if (!$existing) {
+                return false;
+            }
+
+
+            DB::connection('vtiger')
+                ->table('vtiger_crmentity')
+                ->where('crmid', $id)
+                ->update(['deleted' => 1]);
+
+            return true;
+        } catch (\Exception $e) {
+            throw $e;
+        }
+    }
+
+    public function findByAccountName(string $accountName): ?array
+    {
+        $searchTerm = trim($accountName);
+        if (empty($searchTerm)) {
+            return null;
+        }
+        $row = DB::connection('vtiger')
+            ->table('vtiger_account')
+            ->join('vtiger_crmentity', 'vtiger_account.accountid', '=', 'vtiger_crmentity.crmid')
+            ->select(
+                'vtiger_account.accountid',
+                'vtiger_account.accountname',
+                'vtiger_account.email1',
+                'vtiger_crmentity.smownerid as assigned_user_id'
+            )
+            ->where('vtiger_crmentity.deleted', 0)
+            ->whereRaw('TRIM(UPPER(vtiger_account.accountname)) = ?', [strtoupper($searchTerm)])
             ->first();
 
-        if (!$existing) {
-            return false; 
-        }
-
-     
-        DB::connection('vtiger')
-            ->table('vtiger_crmentity')
-            ->where('crmid', $id)
-            ->update(['deleted' => 1]);
-
-        return true;
-
-    } catch (\Exception $e) {
-        throw $e;
+        return $row ? [
+            'id' => $row->accountid,
+            'accountname' => $row->accountname,
+            'email1' => $row->email1,
+            'assigned_user_id' => $row->assigned_user_id
+        ] : null;
     }
-}
+
+    public function findByNameOrEmail(string $searchTerm): array
+    {
+        $rows = DB::connection('vtiger')
+            ->table('vtiger_account')
+            ->join('vtiger_crmentity', 'vtiger_account.accountid', '=', 'vtiger_crmentity.crmid')
+            ->select(
+                'vtiger_account.accountid',
+                'vtiger_account.accountname',
+                'vtiger_account.email1',
+                'vtiger_crmentity.smownerid as assigned_user_id'
+            )
+            ->where('vtiger_crmentity.deleted', 0)
+            ->where(function ($query) use ($searchTerm) {
+                $query->where('vtiger_account.accountname', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('vtiger_account.email1', 'LIKE', "%{$searchTerm}%");
+            })
+            ->limit(20)
+            ->get();
+
+        return $rows->map(function ($row) {
+            return [
+                'id' => $row->accountid,
+                'accountname' => $row->accountname,
+                'email1' => $row->email1,
+                'assigned_user_id' => $row->assigned_user_id
+            ];
+        })->toArray();
+    }
 }

@@ -10,6 +10,9 @@ use App\Application\DTOs\CreateUserRequest;
 use App\Application\DTOs\UpdateUserProfileRequest;
 use App\Application\UseCases\ChangePasswordUseCase;
 use App\Application\UseCases\DeleteUserUseCase;
+use App\Application\UseCases\FindUserByFullNameUseCase;
+use App\Application\UseCases\FindUsersByNameOrUsernameUseCase;
+use App\Application\UseCases\GetMyProfileUseCase;
 use App\Application\UseCases\UpdateUserProfileUseCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -21,7 +24,10 @@ class UserController extends Controller
         private readonly CreateUserUseCase $createUserUseCase,
         private readonly UpdateUserProfileUseCase $updateUserProfileUseCase,
         private readonly ChangePasswordUseCase $changePasswordUseCase,
-        private readonly DeleteUserUseCase $deleteUserUseCase
+        private readonly DeleteUserUseCase $deleteUserUseCase,
+        private readonly GetMyProfileUseCase $getMyProfileUseCase,
+        private readonly FindUsersByNameOrUsernameUseCase $findUsersByNameOrUsernameUseCase,
+        private readonly FindUserByFullNameUseCase $findUserByFullNameUseCase
     ) {}
 
     public function index(Request $request)
@@ -120,7 +126,7 @@ class UserController extends Controller
         }
 
         $requestData = $request->all();
-        
+
         $updateRequest = new UpdateUserProfileRequest(
             id: $id,
             first_name: $requestData['first_name'],
@@ -188,22 +194,136 @@ class UserController extends Controller
     }
 
     public function destroy(Request $request, int $id)
-{
-    $authenticatedUser = $request->attributes->get('auth_user');
-    if (!$authenticatedUser) {
-        return response()->json(['error' => 'Usuario no autenticado'], 401);
-    }
-
-    try {
-        $success = $this->deleteUserUseCase->execute($id, $authenticatedUser->id);
-
-        if ($success) {
-            return response()->json(['message' => 'Usuario eliminado exitosamente']);
+    {
+        $authenticatedUser = $request->attributes->get('auth_user');
+        if (!$authenticatedUser) {
+            return response()->json(['error' => 'Usuario no autenticado'], 401);
         }
 
-        return response()->json(['error' => 'Usuario no encontrado o ya eliminado'], 404);
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 403);
+        try {
+            $success = $this->deleteUserUseCase->execute($id, $authenticatedUser->id);
+
+            if ($success) {
+                return response()->json(['message' => 'Usuario eliminado exitosamente']);
+            }
+
+            return response()->json(['error' => 'Usuario no encontrado o ya eliminado'], 404);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 403);
+        }
     }
-}
+
+    public function getMyProfile(Request $request)
+    {
+        $authenticatedUser = $request->attributes->get('auth_user');
+        if (!$authenticatedUser) {
+            return response()->json(['error' => 'Usuario no autenticado'], 401);
+        }
+
+        $userEntity = $this->getMyProfileUseCase->execute($authenticatedUser->id);
+
+        if (!$userEntity) {
+            return response()->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        return response()->json([
+            'data' => [
+                'id' => $userEntity->id,
+                'first_name' => $userEntity->first_name,
+                'last_name' => $userEntity->last_name,
+                'username' => $userEntity->user_name,
+                'email' => $userEntity->email,
+                'role' => $userEntity->role,
+                'department' => $userEntity->department,
+                'phone' => $userEntity->phone_crm,
+                'status' => $userEntity->status,
+                'is_active' => $userEntity->is_active,
+            ]
+        ]);
+    }
+
+    public function updateMyProfile(Request $request)
+    {
+        $authenticatedUser = $request->attributes->get('auth_user');
+        if (!$authenticatedUser) {
+            return response()->json(['error' => 'Usuario no autenticado'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'first_name' => 'required|string|max:50',
+            'last_name' => 'required|string|max:50',
+            'user_name' => 'required|string|max:50',
+            'email' => 'required|email|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => 'Validación fallida',
+                'messages' => $validator->errors()
+            ], 422);
+        }
+
+        $requestData = $request->all();
+
+        $updateRequest = new UpdateUserProfileRequest(
+            id: $authenticatedUser->id,
+            first_name: $requestData['first_name'],
+            last_name: $requestData['last_name'],
+            user_name: $requestData['user_name'],
+            email: $requestData['email'],
+            role: $authenticatedUser->role,
+            department: $requestData['department'] ?? null,
+            phone_crm: $requestData['phone_crm'] ?? null,
+            reports_to_id: null,
+        );
+
+        try {
+            $success = $this->updateUserProfileUseCase->execute($updateRequest, $authenticatedUser->id);
+
+            if ($success) {
+                return response()->json(['message' => 'Perfil actualizado exitosamente']);
+            }
+
+            return response()->json(['error' => 'Error al actualizar el perfil'], 500);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function searchUsers(Request $request)
+    {
+        $searchTerm = trim($request->get('q', ''));
+
+        if (strlen($searchTerm) < 2) {
+            return response()->json(['data' => []]);
+        }
+
+        try {
+            $users = $this->findUsersByNameOrUsernameUseCase->execute($searchTerm);
+            return response()->json(['data' => $users]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Error al buscar usuarios'], 500);
+        }
+    }
+
+    public function findUserByFullName(Request $request)
+    {
+        $fullName = trim($request->get('full_name', ''));
+
+        if (!$fullName) {
+            return response()->json(['error' => 'Nombre completo requerido'], 422);
+        }
+
+        try {
+            $user = $this->findUserByFullNameUseCase->execute($fullName);
+
+            if (!$user) {
+                return response()->json(['error' => 'Usuario no encontrado'], 404);
+            }
+
+            return response()->json(['data' => $user]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Error al buscar usuario'], 500);
+        }
+    }
 }

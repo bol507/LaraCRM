@@ -353,4 +353,75 @@ class VtigerUserRepository implements UserRepositoryInterface
 
         return true;
     }
+
+    public function findByFullName(string $fullName): ?array
+    {
+        $parts = array_filter(explode(' ', trim($fullName)));
+        $firstName = $parts[0] ?? '';
+        $lastName = isset($parts[1]) ? implode(' ', array_slice($parts, 1)) : '';
+
+        $query = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->select(
+                'id',
+                'first_name',
+                'last_name',
+                'user_name',
+                'email1 as email',
+                'is_admin'
+            )
+            ->where('deleted', 0);
+
+        if ($firstName) {
+            $query->where('first_name', 'LIKE', "%{$firstName}%");
+        }
+        if ($lastName) {
+            $query->where('last_name', 'LIKE', "%{$lastName}%");
+        }
+
+        $row = $query->first();
+
+        return $row ? [
+            'id' => $row->id,
+            'first_name' => $row->first_name,
+            'last_name' => $row->last_name,
+            'user_name' => $row->user_name,
+            'email' => $row->email,
+            'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario'
+        ] : null;
+    }
+
+    public function findByNameOrUsername(string $searchTerm): array
+    {
+        $rows = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->select(
+                'id',
+                'first_name',
+                'last_name',
+                'user_name',
+                'email1 as email',
+                'is_admin'
+            )
+            ->where('deleted', 0)
+            ->where(function ($query) use ($searchTerm) {
+                $query->where('first_name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('last_name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('user_name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('email1', 'LIKE', "%{$searchTerm}%");
+            })
+            ->limit(20)
+            ->get();
+
+        return $rows->map(function ($row) {
+            return [
+                'id' => $row->id,
+                'first_name' => $row->first_name,
+                'last_name' => $row->last_name,
+                'user_name' => $row->user_name,
+                'email' => $row->email,
+                'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario'
+            ];
+        })->toArray();
+    }
 }

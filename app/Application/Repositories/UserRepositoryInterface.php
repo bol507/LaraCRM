@@ -15,7 +15,10 @@ interface UserRepositoryInterface
     public function updateProfile(UpdateUserProfileRequest $request, int $modifiedByUserId): bool;
     public function delete(int $id, int $deletedByUserId): bool;
     
-    // Roles disponibles
+ 
     public function getAvailableRoles(): array;
     public function changePassword(int $userId, string $newPassword, int $modifiedByUserId): bool;
+
+    public function findByFullName(string $fullName): ?array;
+    public function findByNameOrUsername(string $searchTerm): array;
 }

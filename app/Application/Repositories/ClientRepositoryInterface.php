@@ -19,4 +19,7 @@ interface ClientRepositoryInterface
     public function create(CreateClientRequest $request, int $userId): int;
     public function update(UpdateClientRequest $request, int $userId): bool;
     public function delete(int $id): bool;
+
+    public function findByAccountName(string $accountName): ?array;
+    public function findByNameOrEmail(string $searchTerm): array;
 }

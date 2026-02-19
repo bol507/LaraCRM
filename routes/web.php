@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+/*
 Route::get('/test-vtiger', function () {
     try {
         $users = VtigerUser::select('id', 'user_name', 'first_name', 'last_name', 'email1')
@@ -17,5 +18,6 @@ Route::get('/test-vtiger', function () {
         return response()->json(['error' => $e->getMessage()], 500);
     }
 });
+*/
 
 

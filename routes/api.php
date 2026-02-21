@@ -6,7 +6,7 @@ use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\QuotePDFController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\LoginController;
-
+use App\Http\Controllers\Api\ProjectController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -26,15 +26,15 @@ Route::middleware('jwt')->group(function () {
     Route::get('/users/search', [UserController::class, 'searchUsers']);
     Route::get('/users/find-by-full-name', [UserController::class, 'findUserByFullName']);
     Route::delete('/users/{id}', [UserController::class, 'destroy']);
-    Route::put('/users/{id}/profile', [UserController::class, 'updateProfile']);     
+    Route::put('/users/{id}/profile', [UserController::class, 'updateProfile']);
     Route::put('/users/{id}/password', [UserController::class, 'changePassword']);
-    
+
     // User profile
     Route::get('/profile', [UserController::class, 'getMyProfile']);
     Route::put('/profile', [UserController::class, 'updateMyProfile']);
 
-    
-    
+
+
     // Clients
     Route::get('/clients', [ClientController::class, 'index']);
     Route::post('/clients', [ClientController::class, 'store']);
@@ -44,12 +44,12 @@ Route::middleware('jwt')->group(function () {
     Route::put('/clients/{id}', [ClientController::class, 'update']);
     Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
 
-    
+
 
     // Opportunities
     Route::get('/opportunities', [OpportunityController::class, 'index']);
     Route::post('/opportunities', [OpportunityController::class, 'store']);
-    Route::put('/opportunities/{id}', [OpportunityController::class, 'update']); 
+    Route::put('/opportunities/{id}', [OpportunityController::class, 'update']);
     Route::delete('/opportunities/{id}', [OpportunityController::class, 'destroy']);
 
     // Quotes
@@ -60,7 +60,16 @@ Route::middleware('jwt')->group(function () {
     Route::delete('/quotes/{id}', [QuoteController::class, 'destroy']);
     Route::get('/quotes/{quoteId}/pdf/download', [QuotePDFController::class, 'generatePDF'])
         ->name('quotes.pdf.download');
-    
+
     Route::get('/quotes/{quoteId}/pdf/preview', [QuotePDFController::class, 'previewPDF'])
         ->name('quotes.pdf.preview');
+
+    // Projects
+    Route::prefix('projects')->group(function () {
+        Route::get('/', [ProjectController::class, 'index']);           
+        Route::get('/{id}', [ProjectController::class, 'show']);        
+        Route::post('/', [ProjectController::class, 'store']);          
+        Route::put('/{id}', [ProjectController::class, 'update']);     
+        Route::delete('/{id}', [ProjectController::class, 'destroy']); 
+    });
 });

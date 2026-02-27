@@ -3,20 +3,30 @@
 namespace App\Application\Repositories;
 
 use App\Application\DTOs\Task\CreateTaskRequest;
-use App\Application\DTOs\UpdateTaskStatusRequest;
+use App\Application\DTOs\Task\UpdateTaskStatusRequest;
 use App\Domain\Entities\Task;
 
 interface TaskRepositoryInterface
 {
     /**
-     * Get tasks for a specific user
+     * Get tasks for a specific user with pagination
      * 
      * @param int $userId User ID
      * @param int $limit Maximum number of tasks to return
      * @param array $filters Optional filters (status, priority, date range)
+     * @param int $offset Offset for pagination
      * @return Task[]
      */
-    public function findByUserId(int $userId, int $limit = 50, array $filters = []): array;
+    public function findByUserId(int $userId, int $limit = 50, array $filters = [], int $offset = 0): array;
+
+    /**
+     * Count tasks for a user
+     * 
+     * @param int $userId User ID
+     * @param array $filters Optional filters
+     * @return int
+     */
+    public function countByUserId(int $userId, array $filters = []): int;
 
     /**
      * Get tasks for dashboard (recent/pending tasks)
@@ -51,6 +61,14 @@ interface TaskRepositoryInterface
      * @return bool Success
      */
     public function updateStatus(int $taskId, UpdateTaskStatusRequest $request): bool;
+
+    /**
+     * Delete task (soft delete)
+     * 
+     * @param int $taskId Task ID
+     * @return bool Success
+     */
+    public function delete(int $taskId): bool;
 
     /**
      * Get task statistics for a user

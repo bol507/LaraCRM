@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Application\DTOs;
+namespace App\Application\DTOs\Task;
 
 /**
  * DTO for updating task status

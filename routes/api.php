@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\QuotePDFController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\TaskController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -91,10 +92,16 @@ Route::middleware('jwt')->group(function () {
         Route::delete('/{attachmentId}', [AttachmentController::class, 'destroy']);
     });
 
+    Route::prefix('tasks')->group(function () {
+        Route::get('/', [TaskController::class, 'index']);           // List tasks
+        Route::post('/', [TaskController::class, 'store']);          // Create task
+        Route::patch('/{taskId}/status', [TaskController::class, 'updateStatus']); // Update status
+        Route::delete('/{taskId}', [TaskController::class, 'destroy']); // Delete task
+    });
+
     Route::prefix('dashboard')->group(function () {
         // Tasks
         Route::get('/tasks', [DashboardController::class, 'getTasks']);
-        Route::patch('/tasks/{taskId}', [DashboardController::class, 'updateTaskStatus']);
 
         // Activity Chart
         Route::get('/activity', [DashboardController::class, 'getActivityData']);

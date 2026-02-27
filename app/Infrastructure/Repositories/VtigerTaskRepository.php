@@ -3,7 +3,7 @@
 namespace App\Infrastructure\Repositories;
 
 use App\Application\DTOs\Task\CreateTaskRequest;
-use App\Application\DTOs\UpdateTaskStatusRequest;
+use App\Application\DTOs\Task\UpdateTaskStatusRequest;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Domain\Entities\Task;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +14,12 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
-    public function findByUserId(int $userId, int $limit = 50, array $filters = []): array
-    {
+    public function findByUserId(
+        int $userId, 
+        int $limit = 50, 
+        array $filters = [], 
+        int $offset = 0
+    ): array {
         $query = DB::connection('vtiger')
             ->table('vtiger_activity')
             ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
@@ -25,12 +29,16 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
                 $q->where('vtiger_activity.smownerid', $userId)
-                  ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+                    ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             });
 
         // Apply filters
         if (isset($filters['status'])) {
-            $query->where('vtiger_activity.status', $filters['status']);
+            if (is_array($filters['status'])) {
+                $query->whereIn('vtiger_activity.status', $filters['status']);
+            } else {
+                $query->where('vtiger_activity.status', $filters['status']);
+            }
         }
 
         if (isset($filters['priority'])) {
@@ -63,6 +71,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                 ELSE 0 
             END')
             ->orderBy('vtiger_activity.due_date', 'ASC')
+            ->offset($offset) // ✅ Agregar offset para paginación
             ->limit($limit)
             ->get();
 
@@ -74,11 +83,50 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
+    public function countByUserId(int $userId, array $filters = []): int
+    {
+        $query = DB::connection('vtiger')
+            ->table('vtiger_activity')
+            ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
+            ->where('vtiger_crmentity.deleted', 0)
+            ->where('vtiger_activity.activitytype', 'Task')
+            ->where(function ($q) use ($userId) {
+                $q->where('vtiger_activity.smownerid', $userId)
+                    ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+            });
+
+        // Apply filters
+        if (isset($filters['status'])) {
+            if (is_array($filters['status'])) {
+                $query->whereIn('vtiger_activity.status', $filters['status']);
+            } else {
+                $query->where('vtiger_activity.status', $filters['status']);
+            }
+        }
+
+        if (isset($filters['priority'])) {
+            $query->where('vtiger_activity.priority', $filters['priority']);
+        }
+
+        if (isset($filters['dateFrom'])) {
+            $query->where('vtiger_activity.due_date', '>=', $filters['dateFrom']);
+        }
+
+        if (isset($filters['dateTo'])) {
+            $query->where('vtiger_activity.due_date', '<=', $filters['dateTo']);
+        }
+
+        return $query->count();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public function findDashboardTasks(int $userId, int $limit = 10): array
     {
         return $this->findByUserId($userId, $limit, [
             'status' => ['Not Started', 'In Progress', 'Pending Input'],
-        ]);
+        ], 0); // ✅ Pasar offset = 0
     }
 
     /**
@@ -192,6 +240,25 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
+    public function delete(int $taskId): bool
+    {
+        return DB::connection('vtiger')->transaction(function () use ($taskId) {
+            // Soft delete: update deleted flag
+            $updated = DB::connection('vtiger')
+                ->table('vtiger_crmentity')
+                ->where('crmid', $taskId)
+                ->update([
+                    'deleted' => 1,
+                    'modifiedtime' => now()->format('Y-m-d H:i:s'),
+                ]);
+
+            return $updated > 0;
+        });
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public function getStatistics(int $userId): array
     {
         $tasks = DB::connection('vtiger')
@@ -201,7 +268,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
                 $q->where('vtiger_activity.smownerid', $userId)
-                  ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+                    ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             })
             ->select(
                 'vtiger_activity.status',
@@ -213,7 +280,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
         $total = $tasks->count();
         $completed = $tasks->where('status', 'Completed')->count();
         $pending = $tasks->whereNotIn('status', ['Completed'])->count();
-        
+
         $today = now()->format('Y-m-d');
         $overdue = $tasks->whereNotIn('status', ['Completed'])
             ->where('due_date', '<', $today)
@@ -244,7 +311,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
                 $q->where('vtiger_activity.smownerid', $userId)
-                  ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+                    ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             })
             ->selectRaw('status, COUNT(*) as count')
             ->groupBy('status')
@@ -265,7 +332,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
                 $q->where('vtiger_activity.smownerid', $userId)
-                  ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+                    ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             })
             ->selectRaw('priority, COUNT(*) as count')
             ->groupBy('priority')

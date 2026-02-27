@@ -1,11 +1,10 @@
 <?php
 
-namespace App\Application\UseCases\Task;
+namespace App\Application\UseCases\Dashboard;
 
-use App\Application\DTOs\Task\TaskDto;
 use App\Application\Repositories\TaskRepositoryInterface;
-
 use App\Domain\Entities\Task;
+use App\Application\DTOs\Task\TaskDto;
 
 class GetDashboardTasksUseCase
 {
@@ -16,16 +15,19 @@ class GetDashboardTasksUseCase
     /**
      * Get dashboard tasks for a user
      * 
+     * Returns a limited, optimized set of tasks for dashboard widget display.
+     * Only includes pending/in-progress tasks, sorted by priority and due date.
+     * 
      * @param int $userId Authenticated user ID
-     * @param int $limit Maximum number of tasks (default: 10)
+     * @param int $limit Maximum number of tasks (default: 5 for widget)
      * @return array{tasks: TaskDto[], stats: array}
      */
-    public function execute(int $userId, int $limit = 10): array
+    public function execute(int $userId, int $limit = 5): array
     {
-        // Get tasks
+        // Get dashboard-specific tasks (only pending/in-progress)
         $tasks = $this->taskRepository->findDashboardTasks($userId, $limit);
 
-        // Get statistics
+        // Get statistics for dashboard
         $stats = $this->taskRepository->getStatistics($userId);
 
         // Convert to DTOs

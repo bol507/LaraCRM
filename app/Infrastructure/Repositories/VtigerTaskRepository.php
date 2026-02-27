@@ -14,7 +14,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
-    public function findByUserId(
+     public function findByUserId(
         int $userId, 
         int $limit = 50, 
         array $filters = [], 
@@ -28,7 +28,8 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
-                $q->where('vtiger_activity.smownerid', $userId)
+                
+                $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             });
 
@@ -57,11 +58,12 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->select(
                 'vtiger_activity.*',
                 'vtiger_crmentity.smcreatorid',
+                'vtiger_crmentity.smownerid',
                 'vtiger_crmentity.createdtime',
                 'vtiger_crmentity.modifiedtime',
                 'vtiger_crmentity.description',
                 'vtiger_seactivityrel.crmid as related_record_id',
-                'vtiger_seactivityrel.setype as related_module_type',
+                'vtiger_crmentity.setype as related_module_type',
                 'vtiger_users.first_name',
                 'vtiger_users.last_name',
                 'vtiger_users.email1 as email'
@@ -71,7 +73,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                 ELSE 0 
             END')
             ->orderBy('vtiger_activity.due_date', 'ASC')
-            ->offset($offset) // ✅ Agregar offset para paginación
+            ->offset($offset)
             ->limit($limit)
             ->get();
 
@@ -91,7 +93,8 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
-                $q->where('vtiger_activity.smownerid', $userId)
+                
+                $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             });
 
@@ -144,11 +147,12 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->select(
                 'vtiger_activity.*',
                 'vtiger_crmentity.smcreatorid',
+                'vtiger_crmentity.smownerid',
                 'vtiger_crmentity.createdtime',
                 'vtiger_crmentity.modifiedtime',
                 'vtiger_crmentity.description',
                 'vtiger_seactivityrel.crmid as related_record_id',
-                'vtiger_seactivityrel.setype as related_module_type',
+                'vtiger_crmentity.setype as related_module_type',
                 'vtiger_users.first_name',
                 'vtiger_users.last_name',
                 'vtiger_users.email1 as email'
@@ -168,12 +172,10 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     public function create(CreateTaskRequest $request): int
     {
         return DB::connection('vtiger')->transaction(function () use ($request) {
-            // Get next activity ID
             $activityId = DB::connection('vtiger')
                 ->table('vtiger_activity')
                 ->max('activityid') + 1;
 
-            // Insert into vtiger_activity
             DB::connection('vtiger')->table('vtiger_activity')->insert([
                 'activityid' => $activityId,
                 'subject' => $request->subject,
@@ -192,7 +194,6 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                 'notime' => '0',
             ]);
 
-            // Insert into vtiger_crmentity
             DB::connection('vtiger')->table('vtiger_crmentity')->insert([
                 'crmid' => $activityId,
                 'smcreatorid' => $request->assignedUserId,
@@ -207,7 +208,6 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                 'presence' => 1,
             ]);
 
-            // Insert relationship if related record exists
             if ($request->relatedRecordId && $request->relatedModuleType) {
                 DB::connection('vtiger')->table('vtiger_seactivityrel')->insert([
                     'activityid' => $activityId,
@@ -267,7 +267,8 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
-                $q->where('vtiger_activity.smownerid', $userId)
+                
+                $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             })
             ->select(
@@ -283,10 +284,10 @@ class VtigerTaskRepository implements TaskRepositoryInterface
 
         $today = now()->format('Y-m-d');
         $overdue = $tasks->whereNotIn('status', ['Completed'])
-            ->where('due_date', '<', $today)
+            ->where('vtiger_activity.due_date', '<', $today)
             ->count();
 
-        $highPriority = $tasks->where('priority', 'High')
+        $highPriority = $tasks->where('vtiger_activity.priority', 'High')
             ->whereNotIn('status', ['Completed'])
             ->count();
 
@@ -310,7 +311,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
-                $q->where('vtiger_activity.smownerid', $userId)
+                $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             })
             ->selectRaw('status, COUNT(*) as count')
@@ -344,7 +345,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * Map database row to Task entity
      */
-    private function mapToEntity(object $row): Task
+     private function mapToEntity(object $row): Task
     {
         return new Task(
             id: (int) $row->activityid,
@@ -363,7 +364,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             createdAt: new DateTimeImmutable($row->createdtime),
             updatedAt: new DateTimeImmutable($row->modifiedtime),
             relatedRecordId: $row->related_record_id ? (int) $row->related_record_id : null,
-            relatedModuleType: $row->related_module_type,
+            relatedModuleType: $row->related_module_type, 
             sendNotification: $row->sendnotification === '1',
             durationHours: $row->duration_hours,
             durationMinutes: $row->duration_minutes,

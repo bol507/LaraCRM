@@ -66,4 +66,5 @@ interface DashboardRepositoryInterface
      * }
      */
     public function getSummaryMetrics(int $userId): array;
+    
 }

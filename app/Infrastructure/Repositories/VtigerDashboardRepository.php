@@ -43,7 +43,6 @@ class VtigerDashboardRepository implements DashboardRepositoryInterface
             ->pluck('total', 'period')
             ->toArray();
 
-        // Combine both sources
         return $this->mergeSalesData($projectsSales, $invoicesSales);
     }
 
@@ -127,38 +126,38 @@ class VtigerDashboardRepository implements DashboardRepositoryInterface
     public function getSummaryMetrics(int $userId): array
     {
         // Active clients (unique accounts with active projects)
-        $activeClients = DB::connection('vtiger')
+        $activeClients = (int) DB::connection('vtiger')
             ->table('vtiger_project')
             ->join('vtiger_crmentity', 'vtiger_project.projectid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
-            ->where('vtiger_project.projectstatus', 'En Curso')
+            ->whereIn('vtiger_project.projectstatus', ['En Curso', 'Completado'])
             ->where('vtiger_project.linktoaccountscontacts', '>', 0)
             ->distinct('vtiger_project.linktoaccountscontacts')
             ->count('vtiger_project.linktoaccountscontacts');
 
         // Monthly sales (projects + invoices for current month)
-        $monthlySales = DB::connection('vtiger')
+        $monthlyProjectSales = (float) DB::connection('vtiger')
             ->table('vtiger_project')
             ->join('vtiger_crmentity', 'vtiger_project.projectid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
             ->whereMonth('vtiger_crmentity.createdtime', now()->month)
             ->whereYear('vtiger_crmentity.createdtime', now()->year)
             ->whereNotNull('vtiger_project.targetbudget')
-            ->sum('vtiger_project.targetbudget');
+            ->sum('vtiger_project.targetbudget') ?? 0;
 
-        $monthlyInvoices = DB::connection('vtiger')
+        $monthlyInvoiceSales = (float) DB::connection('vtiger')
             ->table('vtiger_invoice')
             ->join('vtiger_crmentity', 'vtiger_invoice.invoiceid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
             ->whereMonth('vtiger_crmentity.createdtime', now()->month)
             ->whereYear('vtiger_crmentity.createdtime', now()->year)
             ->whereNotNull('vtiger_invoice.total')
-            ->sum('vtiger_invoice.total');
+            ->sum('vtiger_invoice.total') ?? 0;
 
-        $totalMonthlySales = ($monthlySales ?? 0) + ($monthlyInvoices ?? 0);
+        $totalMonthlySales = $monthlyProjectSales + $monthlyInvoiceSales;
 
-        // Total quotes
-        $totalQuotes = DB::connection('vtiger')
+        // Total quotes for current month
+        $totalQuotes = (int) DB::connection('vtiger')
             ->table('vtiger_quotes')
             ->join('vtiger_crmentity', 'vtiger_quotes.quoteid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
@@ -166,51 +165,47 @@ class VtigerDashboardRepository implements DashboardRepositoryInterface
             ->whereYear('vtiger_crmentity.createdtime', now()->year)
             ->count();
 
-        // Conversion rate (simplified: accepted quotes / total quotes)
-        $acceptedQuotes = DB::connection('vtiger')
+        // Accepted quotes for conversion rate
+       
+        $acceptedQuotes = (int) DB::connection('vtiger')
             ->table('vtiger_quotes')
             ->join('vtiger_crmentity', 'vtiger_quotes.quoteid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
-            ->where('vtiger_quotes.quote_stage', 'Accepted')
             ->whereMonth('vtiger_crmentity.createdtime', now()->month)
             ->whereYear('vtiger_crmentity.createdtime', now()->year)
+            ->where('vtiger_quotes.quotestage', 'Accepted') 
             ->count();
 
-        $conversionRate = $totalQuotes > 0 ? ($acceptedQuotes / $totalQuotes) * 100 : 0;
+        $conversionRate = $totalQuotes > 0 ? round(($acceptedQuotes / $totalQuotes) * 100, 1) : 0.0;
 
-        // Pending and overdue tasks for user
-        $pendingTasks = DB::connection('vtiger')
+        // Pending tasks for user
+        $pendingTasks = (int) DB::connection('vtiger')
             ->table('vtiger_activity')
             ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
-            ->where('vtiger_activity.status', '!=', 'Completed')
-            ->where(function ($q) use ($userId) {
-                $q->where('vtiger_activity.smownerid', $userId)
-                  ->orWhere('vtiger_crmentity.smcreatorid', $userId);
-            })
+            ->whereNotIn('vtiger_activity.status', ['Completed'])
+            ->where('vtiger_crmentity.smownerid', $userId)
             ->count();
 
-        $overdueTasks = DB::connection('vtiger')
+        // Overdue tasks for user
+        $overdueTasks = (int) DB::connection('vtiger')
             ->table('vtiger_activity')
             ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
-            ->where('vtiger_activity.status', '!=', 'Completed')
+            ->whereNotIn('vtiger_activity.status', ['Completed'])
             ->where('vtiger_activity.due_date', '<', now()->format('Y-m-d'))
-            ->where(function ($q) use ($userId) {
-                $q->where('vtiger_activity.smownerid', $userId)
-                  ->orWhere('vtiger_crmentity.smcreatorid', $userId);
-            })
+            ->where('vtiger_crmentity.smownerid', $userId)
             ->count();
 
         return [
-            'activeClients' => (int) $activeClients,
-            'monthlySales' => (float) $totalMonthlySales,
-            'totalQuotes' => (int) $totalQuotes,
-            'conversionRate' => round($conversionRate, 1),
-            'pendingTasks' => (int) $pendingTasks,
-            'overdueTasks' => (int) $overdueTasks,
+            'activeClients' => $activeClients,
+            'monthlySales' => $totalMonthlySales,
+            'totalQuotes' => $totalQuotes,
+            'conversionRate' => $conversionRate,
+            'pendingTasks' => $pendingTasks,
+            'overdueTasks' => $overdueTasks,
         ];
     }
 

@@ -105,5 +105,8 @@ Route::middleware('jwt')->group(function () {
 
         // Activity Chart
         Route::get('/activity', [DashboardController::class, 'getActivityData']);
+        
+        // Dashboard metrics
+        Route::get('/metrics', [DashboardController::class, 'getMetrics']);
     });
 });

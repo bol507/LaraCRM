@@ -2,13 +2,13 @@
 
 namespace App\Http\Middleware;
 
+use App\Domain\Entities\User;
 use App\Models\VtigerUser;
+use App\Services\JwtService;
 use Closure;
-use Exception;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
+
 
 class JwtMiddleware
 {
@@ -19,30 +19,48 @@ class JwtMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-       $token = $request->bearerToken();
+        $token = $request->bearerToken();
 
         if (!$token) {
             return response()->json(['error' => 'Token no proporcionado'], 401);
         }
 
-        try {
-            $decoded = JWT::decode($token, new Key(env('JWT_SECRET'), 'HS256'));
-            
-            // Verificar que el usuario exista y esté activo
-            $user = VtigerUser::where('id', $decoded->sub)
-                ->where('status', 'Active')
-                ->first();
+        $jwtService = app(JwtService::class);
 
-            if (!$user) {
-                return response()->json(['error' => 'Usuario no encontrado o inactivo'], 401);
-            }
+       
+        $decoded = $jwtService->validateToken($token);
 
-            // Opcional: Adjuntar el usuario a la petición
-            $request->attributes->set('auth_user', $user);
-
-        } catch (\Exception $e) {
+        if (!$decoded || !isset($decoded->sub)) {
             return response()->json(['error' => 'Token inválido o expirado'], 401);
         }
+
+       
+        $vtigerUser = VtigerUser::where('id', $decoded->sub)
+            ->where('status', 'Active')
+            ->where('deleted', 0)
+            ->first();
+
+        if (!$vtigerUser) {
+            return response()->json(['error' => 'Usuario no encontrado o inactivo'], 401);
+        }
+
+        
+        $domainUser = User::fromArray([
+            'id' => $vtigerUser->id,
+            'user_name' => $vtigerUser->user_name,
+            'first_name' => $vtigerUser->first_name,
+            'last_name' => $vtigerUser->last_name,
+            'email' => $vtigerUser->email1,
+            'role' => $vtigerUser->is_admin === '1' ? 'Admin' : 'Usuario',
+            'status' => $vtigerUser->status,
+            'phone_crm' => $vtigerUser->phone_crm_extension,
+            'department' => $vtigerUser->department,
+            'reports_to_id' => $vtigerUser->reports_to_id,
+            'is_active' => $vtigerUser->status === 'Active',
+        ]);
+
+        
+        $request->attributes->set('auth_user', $domainUser);
 
         return $next($request);
     }

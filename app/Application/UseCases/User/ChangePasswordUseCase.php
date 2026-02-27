@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Application\UseCases;
+namespace App\Application\UseCases\User;
 
-use App\Application\DTOs\ChangePasswordRequest;
+use App\Application\DTOs\User\ChangePasswordRequest;
 use App\Application\Repositories\UserRepositoryInterface;
 
 class ChangePasswordUseCase

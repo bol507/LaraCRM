@@ -2,18 +2,24 @@
 
 namespace App\Providers;
 
+use App\Application\Repositories\AttachmentRepositoryInterface;
 use Illuminate\Support\ServiceProvider;
 use App\Application\Repositories\ClientRepositoryInterface;
+use App\Application\Repositories\CommentRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
 use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
+use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
+use App\Infrastructure\Repositories\VtigerAttachmentRepository;
 use App\Infrastructure\Repositories\VtigerClientRepository;
+use App\Infrastructure\Repositories\VtigerCommentRepository;
 use App\Infrastructure\Repositories\VtigerGeneralConditionsRepository;
 use App\Infrastructure\Repositories\VtigerOpportunityRepository;
 use App\Infrastructure\Repositories\VtigerProjectRepository;
 use App\Infrastructure\Repositories\VtigerQuoteRepository as RepositoriesVtigerQuoteRepository;
+use App\Infrastructure\Repositories\VtigerTaskRepository;
 use App\Infrastructure\Repositories\VtigerUserRepository;
 
 class AppServiceProvider extends ServiceProvider
@@ -65,6 +71,21 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             ProjectRepositoryInterface::class,
             VtigerProjectRepository::class
+        );
+        // Comments
+        $this->app->bind(
+            CommentRepositoryInterface::class,
+            VtigerCommentRepository::class
+        );
+        // Attachments
+        $this->app->bind(
+            AttachmentRepositoryInterface::class,
+            VtigerAttachmentRepository::class
+        );
+        // Register Task Repository
+        $this->app->bind(
+            TaskRepositoryInterface::class,
+            VtigerTaskRepository::class
         );
     }
 }

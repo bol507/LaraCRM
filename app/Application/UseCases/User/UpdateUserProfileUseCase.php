@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Application\UseCases;
+namespace App\Application\UseCases\User;
 
-use App\Application\DTOs\UpdateUserProfileRequest;
+use App\Application\DTOs\User\UpdateUserProfileRequest;
 use App\Application\Repositories\UserRepositoryInterface;
 
 class UpdateUserProfileUseCase

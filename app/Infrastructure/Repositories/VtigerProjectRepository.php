@@ -211,11 +211,18 @@ class VtigerProjectRepository implements ProjectRepositoryInterface
 
             $crmid = $maxCrmid ? $maxCrmid + 1 : 1;
 
+            $assignedUserId = $data['assigned_user_id'] ?? null;
+
+
+            if ($assignedUserId === null) {
+                $assignedUserId = 2; // ✅ ID del grupo "All" en Vtiger
+            }
+
             DB::connection('vtiger')
                 ->table('vtiger_crmentity')
                 ->insert([
                     'crmid' => $crmid,
-                    'smownerid' => $data['assigned_user_id'],
+                    'smownerid' => $assignedUserId,
                     'smcreatorid' => $data['created_by_user_id'],
                     'setype' => 'Project',
                     'description' => $data['description'] ?? null,
@@ -242,8 +249,8 @@ class VtigerProjectRepository implements ProjectRepositoryInterface
                     'progress' => '0',
                     'linktoaccountscontacts' => $data['accountid'] ?? null,
                     'tags' => null,
-                    'isconvertedfrompotential' => 0,
-                    'potentialid' => $data['potentialid'] ?? null,
+                    'isconvertedfrompotential' => isset($data['quoteid']) && $data['quoteid'] ? 1 : 0,
+                    'potentialid' => $data['quoteid'] ?? null,
                     'cf_922' => null,
                 ]);
 

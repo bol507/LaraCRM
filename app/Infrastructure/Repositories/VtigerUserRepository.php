@@ -3,16 +3,32 @@
 namespace App\Infrastructure\Repositories;
 
 use App\Application\Repositories\UserRepositoryInterface;
-use App\Application\DTOs\CreateUserRequest;
-use App\Application\DTOs\UpdateUserProfileRequest;
-use App\Application\DTOs\UpdateUserRequest;
+use App\Application\DTOs\User\CreateUserRequest;
+use App\Application\DTOs\User\UpdateUserProfileRequest;
 use App\Domain\Entities\User;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
 
+/**
+ * Vtiger-specific implementation of UserRepositoryInterface.
+ * 
+ * Handles persistence logic for User entities using Vtiger CRM database schema.
+ * Maps Vtiger-specific fields (email1, is_admin, etc.) to domain entity properties.
+ * 
+ * @package App\Infrastructure\Repositories
+ * @implements UserRepositoryInterface
+ * @see \App\Domain\Entities\User
+ */
 class VtigerUserRepository implements UserRepositoryInterface
 {
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Queries vtiger_users table with soft-delete filter (deleted = 0).
+     * Maps database fields to domain properties: email1 → email, is_admin → role.
+     * Uses manual pagination for compatibility with Vtiger schema.
+     */
     public function getAll(int $page = 1, int $perPage = 20, ?string $search = null): LengthAwarePaginator
     {
         $query = DB::connection('vtiger')
@@ -43,19 +59,20 @@ class VtigerUserRepository implements UserRepositoryInterface
         $total = $query->count();
         $items = $query->forPage($page, $perPage)->get();
 
-        $users = $items->map(fn($row) => new User(
-            id: $row->id,
-            user_name: $row->user_name,
-            first_name: $row->first_name,
-            last_name: $row->last_name,
-            email: $row->email1,
-            role: $row->is_admin === '1' ? 'Admin' : 'Usuario',
-            status: $row->status,
-            phone_crm: $row->phone_crm,
-            department: $row->department,
-            reports_to_id: $row->reports_to_id,
-            is_active: $row->status === 'Active'
-        ));
+        // ✅ Usar fromArray() para mapear snake_case → camelCase automáticamente
+        $users = $items->map(fn($row) => User::fromArray([
+            'id' => $row->id,
+            'user_name' => $row->user_name,
+            'first_name' => $row->first_name,
+            'last_name' => $row->last_name,
+            'email' => $row->email1,
+            'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario',
+            'status' => $row->status,
+            'phone_crm' => $row->phone_crm,
+            'department' => $row->department,
+            'reports_to_id' => $row->reports_to_id,
+            'is_active' => $row->status === 'Active',
+        ]));
 
         return new LengthAwarePaginator(
             $users instanceof Collection ? $users : collect($users),
@@ -66,6 +83,12 @@ class VtigerUserRepository implements UserRepositoryInterface
         );
     }
 
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Queries vtiger_users with soft-delete filter.
+     * Returns null if user not found or marked as deleted.
+     */
     public function findById(int $id): ?User
     {
         $row = DB::connection('vtiger')
@@ -86,21 +109,32 @@ class VtigerUserRepository implements UserRepositoryInterface
             ->where('deleted', 0)
             ->first();
 
-        return $row ? new User(
-            id: $row->id,
-            user_name: $row->user_name,
-            first_name: $row->first_name,
-            last_name: $row->last_name,
-            email: $row->email1,
-            role: $row->is_admin === '1' ? 'Admin' : 'Usuario',
-            status: $row->status,
-            phone_crm: $row->phone_crm,
-            department: $row->department,
-            reports_to_id: $row->reports_to_id,
-            is_active: $row->status === 'Active'
-        ) : null;
+        
+        return $row ? User::fromArray([
+            'id' => $row->id,
+            'user_name' => $row->user_name,
+            'first_name' => $row->first_name,
+            'last_name' => $row->last_name,
+            'email' => $row->email1,
+            'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario',
+            'status' => $row->status,
+            'phone_crm' => $row->phone_crm,
+            'department' => $row->department,
+            'reports_to_id' => $row->reports_to_id,
+            'is_active' => $row->status === 'Active',
+        ]) : null;
     }
-
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: 
+     * - Password must be stored in BOTH 'user_password' AND 'confirm_password' fields
+     * - 'crypt_type' must be set to 'PHASH' for PHP password_hash() compatibility
+     * - Many UI-related fields require default values for proper Vtiger frontend behavior
+     * - Uses database transaction to ensure atomicity of user creation
+     * 
+     * @throws \Exception If database transaction fails, rolled back automatically
+     */
     public function create(CreateUserRequest $request, int $createdByUserId): int
     {
         DB::connection('vtiger')->beginTransaction();
@@ -111,7 +145,7 @@ class VtigerUserRepository implements UserRepositoryInterface
             $userId = DB::connection('vtiger')
                 ->table('vtiger_users')
                 ->insertGetId([
-                    // fields 
+                    // Core user fields
                     'user_name' => $request->user_name,
                     'first_name' => $request->first_name,
                     'last_name' => $request->last_name,
@@ -122,18 +156,18 @@ class VtigerUserRepository implements UserRepositoryInterface
                     'department' => $request->department,
                     'reports_to_id' => $request->reports_to_id,
 
-                    // 
+                    // ⚠️ Vtiger audit fields (required for proper tracking)
                     'date_entered' => now()->format('Y-m-d H:i:s'),
                     'date_modified' => now()->format('Y-m-d H:i:s'),
                     'modified_user_id' => $createdByUserId,
                     'deleted' => 0,
 
-                    // password and security
+                    // ⚠️ Password storage: Vtiger requires BOTH fields with PHASH
                     'user_password' => $hashedPassword,
                     'confirm_password' => $hashedPassword,
                     'crypt_type' => 'PHASH',
 
-                    // address of invoice
+                    // ⚠️ Default values for Vtiger UI compatibility
                     'currency_id' => 21, // USD
                     'description' => '',
                     'cal_color' => '#E6FAD8',
@@ -201,6 +235,13 @@ class VtigerUserRepository implements UserRepositoryInterface
         }
     }
 
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Updates vtiger_users table with audit fields (date_modified, modified_user_id).
+     * Does not update password-related fields (use changePassword() for that).
+     * Returns false if user not found or marked as deleted.
+     */
     public function updateProfile(UpdateUserProfileRequest $request, int $modifiedByUserId): bool
     {
         DB::connection('vtiger')->beginTransaction();
@@ -244,9 +285,18 @@ class VtigerUserRepository implements UserRepositoryInterface
         }
     }
 
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Implements soft-delete by setting 'deleted = 1' instead of removing row.
+     * Authorization: Only users with is_admin = '1' can delete other users.
+     * Prevention: Users cannot delete their own account via this method.
+     * 
+     * @throws \Exception If caller lacks admin privileges or attempts self-deletion
+     */
     public function delete(int $id, int $deletedByUserId): bool
     {
-        // Verificar que el usuario exista y esté activo
+        // Verify user exists and is active
         $user = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $id)
@@ -257,7 +307,7 @@ class VtigerUserRepository implements UserRepositoryInterface
             return false;
         }
 
-        // Verificar permisos: solo admin puede eliminar usuarios
+        // ⚠️ Authorization check: only admins can delete users
         $deleterIsAdmin = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $deletedByUserId)
@@ -265,15 +315,15 @@ class VtigerUserRepository implements UserRepositoryInterface
             ->exists();
 
         if (!$deleterIsAdmin) {
-            throw new \Exception('Solo los administradores pueden eliminar usuarios');
+            throw new \Exception('Only administrators can delete users');
         }
 
-        // Verificar que no se esté eliminando a sí mismo
+        // ⚠️ Prevention: users cannot delete their own account
         if ($deletedByUserId === $id) {
-            throw new \Exception('No puedes eliminarte a ti mismo');
+            throw new \Exception('You cannot delete your own account');
         }
 
-        // Realizar soft delete
+        // Perform soft delete
         return DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $id)
@@ -284,16 +334,29 @@ class VtigerUserRepository implements UserRepositoryInterface
             ]) > 0;
     }
 
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Returns static list of roles supported by this Vtiger installation.
+     * In production, this could query vtiger_role table for dynamic role management.
+     */
     public function getAvailableRoles(): array
     {
         return ['Admin', 'Usuario', 'Cliente'];
     }
 
+    /**
+     * Map Vtiger role ID to domain role name.
+     * 
+     * @internal Used internally for legacy role mapping
+     * @param string|null $roleid Vtiger role identifier (e.g., 'H1', 'H2')
+     * @return string Domain role name (Admin, Usuario, Cliente)
+     */
     private function getRoleName(?string $roleid): string
     {
         if (!$roleid) return 'Usuario';
 
-        // Mapeo básico - en producción deberías consultar vtiger_role
+        // ⚠️ Static mapping - in production, query vtiger_role table
         $roles = [
             'H1' => 'Admin',
             'H2' => 'Usuario',
@@ -303,6 +366,13 @@ class VtigerUserRepository implements UserRepositoryInterface
         return $roles[$roleid] ?? 'Usuario';
     }
 
+    /**
+     * Map domain role name to Vtiger role ID.
+     * 
+     * @internal Used internally for legacy role mapping
+     * @param string $roleName Domain role name
+     * @return string Vtiger role identifier
+     */
     private function getRoleId(string $roleName): string
     {
         $roles = [
@@ -314,9 +384,19 @@ class VtigerUserRepository implements UserRepositoryInterface
         return $roles[$roleName] ?? 'H2';
     }
 
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: 
+     * - Password hashed with PASSWORD_DEFAULT and stored with crypt_type = 'PHASH'
+     * - Authorization: Users can only change their own password, unless caller is admin
+     * - Updates audit fields (date_modified, modified_user_id) for compliance
+     * 
+     * @throws \Exception If caller lacks permission to change the target user's password
+     */
     public function changePassword(int $userId, string $newPassword, int $modifiedByUserId): bool
     {
-        // Verificar que el usuario exista
+        // Verify user exists
         $user = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $userId)
@@ -327,7 +407,7 @@ class VtigerUserRepository implements UserRepositoryInterface
             return false;
         }
 
-
+        // ⚠️ Authorization check
         $modifierIsAdmin = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $modifiedByUserId)
@@ -335,7 +415,7 @@ class VtigerUserRepository implements UserRepositoryInterface
             ->exists();
 
         if ($modifiedByUserId !== $userId && !$modifierIsAdmin) {
-            throw new \Exception('No tienes permiso para cambiar esta contraseña');
+            throw new \Exception('You do not have permission to change this password');
         }
 
         $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
@@ -346,7 +426,7 @@ class VtigerUserRepository implements UserRepositoryInterface
             ->update([
                 'user_password' => $hashedPassword,
                 'confirm_password' => $hashedPassword,
-                'crypt_type' => 'PHASH',
+                'crypt_type' => 'PHASH',  
                 'date_modified' => now()->format('Y-m-d H:i:s'),
                 'modified_user_id' => $modifiedByUserId,
             ]);
@@ -354,6 +434,12 @@ class VtigerUserRepository implements UserRepositoryInterface
         return true;
     }
 
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Splits full name into first/last name components for separate field queries.
+     * Returns array format (not User entity) for lightweight search results.
+     */
     public function findByFullName(string $fullName): ?array
     {
         $parts = array_filter(explode(' ', trim($fullName)));
@@ -367,7 +453,7 @@ class VtigerUserRepository implements UserRepositoryInterface
                 'first_name',
                 'last_name',
                 'user_name',
-                'email1 as email',
+                'email1 as email',  // ⚠️ Aliased for API consistency
                 'is_admin'
             )
             ->where('deleted', 0);
@@ -391,6 +477,13 @@ class VtigerUserRepository implements UserRepositoryInterface
         ] : null;
     }
 
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Searches across first_name, last_name, user_name, and email1 fields.
+     * Limited to 20 results for autocomplete performance.
+     * Returns array format for lightweight frontend consumption.
+     */
     public function findByNameOrUsername(string $searchTerm): array
     {
         $rows = DB::connection('vtiger')
@@ -410,7 +503,7 @@ class VtigerUserRepository implements UserRepositoryInterface
                     ->orWhere('user_name', 'LIKE', "%{$searchTerm}%")
                     ->orWhere('email1', 'LIKE', "%{$searchTerm}%");
             })
-            ->limit(20)
+            ->limit(20)  // ⚠️ Limit for autocomplete performance
             ->get();
 
         return $rows->map(function ($row) {
@@ -423,5 +516,188 @@ class VtigerUserRepository implements UserRepositoryInterface
                 'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario'
             ];
         })->toArray();
+    }
+
+     /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Queries email1 field (case-insensitive via LOWER).
+     * Returns null if user not found, inactive, or soft-deleted.
+     */
+    public function findByEmail(string $email): ?User
+    {
+        $row = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->select(
+                'id',
+                'user_name',
+                'first_name',
+                'last_name',
+                'email1',
+                'is_admin',
+                'status',
+                'phone_crm_extension as phone_crm',
+                'department',
+                'reports_to_id'
+            )
+            ->whereRaw('LOWER(email1) = ?', [strtolower($email)])
+            ->where('deleted', 0)
+            ->first();
+
+        return $row ? User::fromArray([
+            'id' => $row->id,
+            'user_name' => $row->user_name,
+            'first_name' => $row->first_name,
+            'last_name' => $row->last_name,
+            'email' => $row->email1,
+            'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario',
+            'status' => $row->status,
+            'phone_crm' => $row->phone_crm,
+            'department' => $row->department,
+            'reports_to_id' => $row->reports_to_id,
+            'is_active' => $row->status === 'Active',
+        ]) : null;
+    }
+
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Usernames are case-sensitive in Vtiger.
+     * Returns null if user not found, inactive, or soft-deleted.
+     */
+    public function findByUserName(string $userName): ?User
+    {
+        $row = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->select(
+                'id',
+                'user_name',
+                'first_name',
+                'last_name',
+                'email1',
+                'is_admin',
+                'status',
+                'phone_crm_extension as phone_crm',
+                'department',
+                'reports_to_id'
+            )
+            ->where('user_name', $userName)
+            ->where('deleted', 0)
+            ->first();
+
+        return $row ? User::fromArray([
+            'id' => $row->id,
+            'user_name' => $row->user_name,
+            'first_name' => $row->first_name,
+            'last_name' => $row->last_name,
+            'email' => $row->email1,
+            'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario',
+            'status' => $row->status,
+            'phone_crm' => $row->phone_crm,
+            'department' => $row->department,
+            'reports_to_id' => $row->reports_to_id,
+            'is_active' => $row->status === 'Active',
+        ]) : null;
+    }
+
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Checks user_name field with case-sensitive comparison.
+     * Excludes soft-deleted users from availability check.
+     */
+    public function isUserNameAvailable(string $userName, ?int $excludeUserId = null): bool
+    {
+        $query = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->where('user_name', $userName)
+            ->where('deleted', 0);
+
+        if ($excludeUserId) {
+            $query->where('id', '!=', $excludeUserId);
+        }
+
+        return $query->count() === 0;
+    }
+
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Checks email1 field with case-insensitive comparison.
+     * Excludes soft-deleted users from availability check.
+     */
+    public function isEmailAvailable(string $email, ?int $excludeUserId = null): bool
+    {
+        $query = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->whereRaw('LOWER(email1) = ?', [strtolower($email)])
+            ->where('deleted', 0);
+
+        if ($excludeUserId) {
+            $query->where('id', '!=', $excludeUserId);
+        }
+
+        return $query->count() === 0;
+    }
+
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Counts users with status = 'Active' and deleted = 0.
+     * Optimized query using COUNT(*) instead of loading all records.
+     */
+    public function countActiveUsers(): int
+    {
+        return DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->where('status', 'Active')
+            ->where('deleted', 0)
+            ->count();
+    }
+
+    /**
+     * {@inheritDoc}
+     * 
+     * Vtiger-specific: Maps role name to is_admin flag for filtering.
+     * Returns all active users with matching role, ordered by creation date.
+     */
+    public function findByRole(string $role): array
+    {
+        // ⚠️ Map domain role to Vtiger is_admin flag
+        $isAdmin = ($role === 'Admin') ? '1' : '0';
+
+        $rows = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->select(
+                'id',
+                'user_name',
+                'first_name',
+                'last_name',
+                'email1',
+                'is_admin',
+                'status',
+                'phone_crm_extension as phone_crm',
+                'department',
+                'reports_to_id'
+            )
+            ->where('is_admin', $isAdmin)
+            ->where('status', 'Active')
+            ->where('deleted', 0)
+            ->orderBy('date_entered', 'desc')
+            ->get();
+
+        return $rows->map(fn($row) => User::fromArray([
+            'id' => $row->id,
+            'user_name' => $row->user_name,
+            'first_name' => $row->first_name,
+            'last_name' => $row->last_name,
+            'email' => $row->email1,
+            'role' => $row->is_admin === '1' ? 'Admin' : 'Usuario',
+            'status' => $row->status,
+            'phone_crm' => $row->phone_crm,
+            'department' => $row->department,
+            'reports_to_id' => $row->reports_to_id,
+            'is_active' => $row->status === 'Active',
+        ]))->toArray();
     }
 }

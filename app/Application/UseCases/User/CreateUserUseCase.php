@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Application\UseCases;
+namespace App\Application\UseCases\User;
 
-use App\Application\DTOs\CreateUserRequest;
+use App\Application\DTOs\User\CreateUserRequest;
 use App\Application\Repositories\UserRepositoryInterface;
 
 class CreateUserUseCase

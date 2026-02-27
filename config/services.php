@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'google_drive' => [
+        'folder_id' => env('GOOGLE_DRIVE_FOLDER_ID'),
+        'config_path' => storage_path('app/google-drive-config.json'), 
+    ],
 ];

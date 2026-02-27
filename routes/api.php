@@ -1,6 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\CommentController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\OpportunityController;
 use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\QuotePDFController;
@@ -21,13 +24,15 @@ Route::prefix('auth')->group(function () {
 
 Route::middleware('jwt')->group(function () {
     // Users
-    Route::get('/users', [UserController::class, 'index']);
-    Route::post('/users', [UserController::class, 'store']);
-    Route::get('/users/search', [UserController::class, 'searchUsers']);
-    Route::get('/users/find-by-full-name', [UserController::class, 'findUserByFullName']);
-    Route::delete('/users/{id}', [UserController::class, 'destroy']);
-    Route::put('/users/{id}/profile', [UserController::class, 'updateProfile']);
-    Route::put('/users/{id}/password', [UserController::class, 'changePassword']);
+    Route::prefix('users')->group(function () {
+        Route::get('/', [UserController::class, 'index']);
+        Route::post('/', [UserController::class, 'store']);
+        Route::get('/search', [UserController::class, 'searchUsers']);
+        Route::get('/find-by-full-name', [UserController::class, 'findUserByFullName']);
+        Route::get('/{id}', [UserController::class, 'show']);
+        Route::delete('/{id}', [UserController::class, 'destroy']);
+        Route::put('/{id}/password', [UserController::class, 'changePassword']);
+    });
 
     // User profile
     Route::get('/profile', [UserController::class, 'getMyProfile']);
@@ -66,10 +71,32 @@ Route::middleware('jwt')->group(function () {
 
     // Projects
     Route::prefix('projects')->group(function () {
-        Route::get('/', [ProjectController::class, 'index']);           
-        Route::get('/{id}', [ProjectController::class, 'show']);        
-        Route::post('/', [ProjectController::class, 'store']);          
-        Route::put('/{id}', [ProjectController::class, 'update']);     
-        Route::delete('/{id}', [ProjectController::class, 'destroy']); 
+        Route::get('/', [ProjectController::class, 'index']);
+        Route::get('/{id}', [ProjectController::class, 'show']);
+        Route::post('/', [ProjectController::class, 'store']);
+        Route::put('/{id}', [ProjectController::class, 'update']);
+        Route::delete('/{id}', [ProjectController::class, 'destroy']);
+    });
+
+    // Comment Routes
+    Route::prefix('comments')->group(function () {
+        Route::get('/{module}/{relatedId}', [CommentController::class, 'index']);
+        Route::post('/{module}/{relatedId}', [CommentController::class, 'store']);
+    });
+
+    // Attachment Routes 
+    Route::prefix('attachments')->group(function () {
+        Route::post('/{module}/{recordId}', [AttachmentController::class, 'upload']);
+        Route::get('/{module}/{recordId}', [AttachmentController::class, 'index']);
+        Route::delete('/{attachmentId}', [AttachmentController::class, 'destroy']);
+    });
+
+    Route::prefix('dashboard')->group(function () {
+        // Tasks
+        Route::get('/tasks', [DashboardController::class, 'getTasks']);
+        Route::patch('/tasks/{taskId}', [DashboardController::class, 'updateTaskStatus']);
+
+        // Activity Chart
+        Route::get('/activity', [DashboardController::class, 'getActivityData']);
     });
 });

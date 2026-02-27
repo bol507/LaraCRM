@@ -92,7 +92,7 @@ class ProjectController extends Controller {
             $validated = $request->validate([
                 'projectname' => 'required|string|max:255',
                 'accountid' => 'required|integer',
-                'assigned_user_id' => 'required|integer',
+                'assigned_user_id' => 'nullable|integer',
                 'projectstatus' => 'nullable|string',
                 'projectpriority' => 'nullable|string',
                 'projecttype' => 'nullable|string',
@@ -102,6 +102,7 @@ class ProjectController extends Controller {
                 'projecturl' => 'nullable|string',
                 'description' => 'nullable|string',
                 'potentialid' => 'nullable|integer',
+                'quoteid' => 'nullable|integer',
             ]);
             $authenticatedUser = $request->attributes->get('auth_user');
             $projectId = $this->createProjectUseCase->execute($validated, $authenticatedUser->id);

@@ -46,6 +46,16 @@ interface TaskRepositoryInterface
     public function findById(int $taskId): ?Task;
 
     /**
+     * Get ALL tasks for dashboard (pending + completed)
+     * Ordered by most recent first (createdtime DESC)
+     * 
+     * @param int $userId User ID
+     * @param int $limit Maximum number of tasks
+     * @return Task[]
+     */
+    public function findAllDashboardTasks(int $userId, int $limit = 10): array;
+
+    /**
      * Create a new task
      * 
      * @param CreateTaskRequest $request
@@ -60,7 +70,7 @@ interface TaskRepositoryInterface
      * @param UpdateTaskStatusRequest $request
      * @return bool Success
      */
-    public function updateStatus(int $taskId, UpdateTaskStatusRequest $request): bool;
+    public function updateStatus(int $taskId, UpdateTaskStatusRequest $request, int $modifiedBy): bool;
 
     /**
      * Delete task (soft delete)

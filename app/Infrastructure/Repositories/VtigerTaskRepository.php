@@ -8,16 +8,17 @@ use App\Application\Repositories\TaskRepositoryInterface;
 use App\Domain\Entities\Task;
 use Illuminate\Support\Facades\DB;
 use DateTimeImmutable;
+use Illuminate\Support\Facades\Auth;
 
 class VtigerTaskRepository implements TaskRepositoryInterface
 {
     /**
      * {@inheritDoc}
      */
-     public function findByUserId(
-        int $userId, 
-        int $limit = 50, 
-        array $filters = [], 
+    public function findByUserId(
+        int $userId,
+        int $limit = 50,
+        array $filters = [],
         int $offset = 0
     ): array {
         $query = DB::connection('vtiger')
@@ -28,7 +29,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
-                
+
                 $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             });
@@ -93,7 +94,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
-                
+
                 $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             });
@@ -169,6 +170,48 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
+    public function findAllDashboardTasks(int $userId, int $limit = 10): array
+    {
+        $query = DB::connection('vtiger')
+            ->table('vtiger_activity')
+            ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
+            ->leftJoin('vtiger_seactivityrel', 'vtiger_activity.activityid', '=', 'vtiger_seactivityrel.activityid')
+            ->leftJoin('vtiger_users', 'vtiger_crmentity.smownerid', '=', 'vtiger_users.id')
+            ->where('vtiger_crmentity.deleted', 0)
+            ->where('vtiger_activity.activitytype', 'Task')
+            ->where(function ($q) use ($userId) {
+                $q->where('vtiger_crmentity.smownerid', $userId)
+                    ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+            });
+
+        
+        $results = $query
+            ->select(
+                'vtiger_activity.*',
+                'vtiger_crmentity.smcreatorid',
+                'vtiger_crmentity.smownerid',
+                'vtiger_crmentity.createdtime',
+                'vtiger_crmentity.modifiedtime',
+                'vtiger_crmentity.description',
+                'vtiger_seactivityrel.crmid as related_record_id',
+                'vtiger_crmentity.setype as related_module_type',
+                'vtiger_users.first_name',
+                'vtiger_users.last_name',
+                'vtiger_users.email1 as email'
+            )
+            
+            ->orderBy('vtiger_crmentity.createdtime', 'DESC')
+            ->limit($limit)
+            ->get();
+
+        return $results->map(function ($row) {
+            return $this->mapToEntity($row);
+        })->toArray();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public function create(CreateTaskRequest $request): int
     {
         return DB::connection('vtiger')->transaction(function () use ($request) {
@@ -222,18 +265,33 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
-    public function updateStatus(int $taskId, UpdateTaskStatusRequest $request): bool
+    public function updateStatus(int $taskId, UpdateTaskStatusRequest $request, int $modifiedBy): bool
     {
-        return DB::connection('vtiger')->transaction(function () use ($taskId, $request) {
+        return DB::connection('vtiger')->transaction(function () use ($taskId, $request,  $modifiedBy) {
+
             $updated = DB::connection('vtiger')
                 ->table('vtiger_activity')
                 ->where('activityid', $taskId)
                 ->update([
                     'status' => $request->status,
-                    'modifiedtime' => now()->format('Y-m-d H:i:s'),
                 ]);
 
-            return $updated > 0;
+            if ($updated === 0) {
+                return false;
+            }
+
+
+            DB::connection('vtiger')
+                ->table('vtiger_crmentity')
+                ->where('crmid', $taskId)
+                ->update([
+                    'modifiedtime' => now()->format('Y-m-d H:i:s'),
+                    'modifiedby' => $modifiedBy, // ✅ Recibido como parámetro
+                    'version' => DB::raw('version + 1'),
+                ]);
+
+
+            return true;
         });
     }
 
@@ -267,7 +325,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
-                
+
                 $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             })
@@ -345,7 +403,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * Map database row to Task entity
      */
-     private function mapToEntity(object $row): Task
+    private function mapToEntity(object $row): Task
     {
         return new Task(
             id: (int) $row->activityid,
@@ -364,7 +422,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             createdAt: new DateTimeImmutable($row->createdtime),
             updatedAt: new DateTimeImmutable($row->modifiedtime),
             relatedRecordId: $row->related_record_id ? (int) $row->related_record_id : null,
-            relatedModuleType: $row->related_module_type, 
+            relatedModuleType: $row->related_module_type,
             sendNotification: $row->sendnotification === '1',
             durationHours: $row->duration_hours,
             durationMinutes: $row->duration_minutes,

@@ -4,7 +4,7 @@ namespace App\Application\UseCases\Task;
 
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\DTOs\Task\UpdateTaskStatusRequest;
-use App\Application\ValueObjects\TaskStatus;
+use App\Application\ValueObjects\Task\TaskStatus;
 use RuntimeException;
 use InvalidArgumentException;
 
@@ -23,7 +23,7 @@ class UpdateTaskStatusUseCase
      * @throws InvalidArgumentException If status is invalid
      * @throws RuntimeException If task not found
      */
-    public function execute(int $taskId, string $status): bool
+    public function execute(int $taskId, string $status, int $modifiedBy): bool
     {
         // Validate status
         if (!TaskStatus::isValid($status)) {
@@ -46,6 +46,6 @@ class UpdateTaskStatusUseCase
 
         // Update status
         $request = new UpdateTaskStatusRequest($status);
-        return $this->taskRepository->updateStatus($taskId, $request);
+        return $this->taskRepository->updateStatus($taskId, $request, $modifiedBy);
     }
 }

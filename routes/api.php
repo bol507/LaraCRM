@@ -102,6 +102,8 @@ Route::middleware('jwt')->group(function () {
     Route::prefix('dashboard')->group(function () {
         // Tasks
         Route::get('/tasks', [DashboardController::class, 'getTasks']);
+        // Update task status (mark as complete/incomplete)
+        Route::patch('/tasks/{taskId}', [DashboardController::class, 'updateTaskStatus']);
 
         // Activity Chart
         Route::get('/activity', [DashboardController::class, 'getActivityData']);

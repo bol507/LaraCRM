@@ -24,8 +24,8 @@ class GetDashboardTasksUseCase
      */
     public function execute(int $userId, int $limit = 5): array
     {
-        // Get dashboard-specific tasks (only pending/in-progress)
-        $tasks = $this->taskRepository->findDashboardTasks($userId, $limit);
+        
+         $tasks = $this->taskRepository->findAllDashboardTasks($userId, $limit);
 
         // Get statistics for dashboard
         $stats = $this->taskRepository->getStatistics($userId);

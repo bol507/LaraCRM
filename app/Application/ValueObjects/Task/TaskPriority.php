@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Application\ValueObjects;
+namespace App\Application\ValueObjects\Task;
 
 /**
  * Task Priority Value Object

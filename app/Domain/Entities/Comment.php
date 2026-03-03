@@ -260,6 +260,26 @@ class Comment
         return $this->commentcontent;
     }
 
+    public function getRelatedTo(): int
+    {
+        return $this->related_to;
+    }
+
+    public function getCreatedTime(): ?string
+    {
+        return $this->createdtime;
+    }
+
+    public function getModifiedTime(): ?string
+    {
+        return $this->modifiedtime;
+    }
+
+    public function getParentComments(): ?int
+    {
+        return $this->parent_comments;
+    }
+
     /**
      * Get the ID of the related record (e.g., task ID)
      * 

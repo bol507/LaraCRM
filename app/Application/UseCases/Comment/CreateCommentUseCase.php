@@ -2,268 +2,115 @@
 
 namespace App\Application\UseCases\Comment;
 
-use App\Application\Repositories\CommentRepositoryInterface;
 use App\Application\DTOs\Comment\CreateCommentRequest;
+use App\Application\Repositories\CommentRepositoryInterface;
 use App\Domain\Entities\Comment;
-use InvalidArgumentException;
-use DomainException;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
-/**
- * Create Comment Use Case
- * 
- * Orchestrates the creation of a new comment in the system.
- * 
- * Responsibilities:
- * - Validate input data against business rules
- * - Ensure user has permission to comment on the related record
- * - Delegate persistence to the repository layer
- * - Return the ID of the newly created comment
- * 
- * This use case is part of the Application layer and should not contain
- * infrastructure-specific logic (SQL, HTTP, file I/O, etc.).
- * 
- * @package App\Application\UseCases\Comment
- * @author Bolivar Delgado <bolivar.delgado@gmail.com>
- * @since 1.0.0
- * 
- * @see \App\Application\DTOs\CreateCommentRequest
- * @see \App\Application\Repositories\CommentRepositoryInterface
- * @see \App\Domain\Entities\Comment
- * @see \App\Http\Controllers\Api\CommentController
- */
 class CreateCommentUseCase
 {
-    /**
-     * Comment repository for persistence operations
-     * 
-     * @var CommentRepositoryInterface
-     */
-    protected readonly CommentRepositoryInterface $repository;
-
-    /**
-     * Constructor with dependency injection
-     * 
-     * @param CommentRepositoryInterface $repository Repository for comment persistence
-     */
-    public function __construct(CommentRepositoryInterface $repository)
-    {
-        $this->repository = $repository;
-    }
+    public function __construct(
+        private readonly CommentRepositoryInterface $repository
+    ) {}
 
     /**
      * Execute the create comment use case
      * 
-     * Creates a new comment after validating business rules:
-     * - Content must not be empty or exceed maximum length
-     * - Related task/record must exist and be accessible
-     * - User must have permission to comment on the related record
-     * - Attachment filename (if provided) must be valid
+     * @param CreateCommentRequest $request Validated request data
+     * @return Comment The newly created comment entity
      * 
-     * @param CreateCommentRequest $request Data transfer object with comment creation data
-     * @return int The unique identifier of the newly created comment
-     * 
-     * @throws InvalidArgumentException If input data fails validation rules
-     * @throws DomainException If business rules are violated (e.g., insufficient permissions)
-     * @throws \RuntimeException If repository operation fails
-     * 
-     * @example
-     * // In a controller:
-     * $request = new CreateCommentRequest(
-     *     taskId: 123,
-     *     content: "Task completed successfully!",
-     *     userId: 456,
-     *     parentCommentId: null,
-     *     attachment: null
-     * );
-     * $commentId = $createCommentUseCase->execute($request);
-     * 
-     * @example
-     * // Creating a threaded reply:
-     * $request = new CreateCommentRequest(
-     *     taskId: 123,
-     *     content: "Thanks for the update!",
-     *     userId: 456,
-     *     parentCommentId: 789, // Reply to comment #789
-     *     attachment: null
-     * );
-     * $replyId = $createCommentUseCase->execute($request);
+     * @throws ValidationException If validation fails
+     * @throws \InvalidArgumentException If business rules are violated
+     * @throws \RuntimeException If persistence fails
      */
-    public function execute(CreateCommentRequest $request): int
+    public function execute(CreateCommentRequest $request): Comment
     {
-        // ✅ Validate request data (domain-level validation)
-        $this->validateRequest($request);
+        //  Additional business rule validation (beyond request validation)
+        $this->validateBusinessRules($request);
 
-        // ✅ Business rule: Verify user can comment on this task/record
-        $this->verifyCommentPermission($request->taskId, $request->userId);
-
-        // ✅ Business rule: If replying, verify parent comment exists and is accessible
-        if ($request->parentCommentId !== null) {
-            $this->verifyParentComment($request->parentCommentId, $request->userId);
-        }
-
-        // ✅ Business rule: Validate attachment filename if provided
-        if ($request->attachment !== null) {
-            $this->validateAttachment($request->attachment);
-        }
-
-        // ✅ Delegate persistence to repository layer
-        // The repository will map the DTO to a Comment entity and persist it
-        return $this->repository->create($request);
+        //  CORRECTION: Extract parameters from DTO and pass them individually to repository
+        return $this->repository->create(
+            module: $request->module,              //  string
+            relatedId: $request->relatedId,         //  int
+            content: $request->content,             //  string
+            authenticatedUserId: $request->userId,  //  int
+            parentId: $request->parentCommentId,    //  ?int
+            isPrivate: $request->isPrivate ?? false //  ?bool
+        );
     }
 
     /**
-     * Validate the create comment request data
+     * Validate domain-specific business rules
      * 
-     * Performs domain-level validation that is independent of framework
-     * validation rules. Repository-level validation may add additional checks.
-     * 
-     * @param CreateCommentRequest $request Request to validate
-     * @return void
-     * 
-     * @throws InvalidArgumentException If any validation rule fails
+     * @param CreateCommentRequest $request
+     * @throws ValidationException
+     * @throws \InvalidArgumentException
      */
-    protected function validateRequest(CreateCommentRequest $request): void
+    private function validateBusinessRules(CreateCommentRequest $request): void
     {
-        // Content cannot be empty or whitespace-only
+        //  Validate that content is not empty after trim
         if (trim($request->content) === '') {
-            throw new InvalidArgumentException('Comment content cannot be empty');
+            throw ValidationException::withMessages([
+                'content' => ['Comment content cannot be empty']
+            ]);
         }
 
-        // Content length limit (Vtiger TEXT field: ~65,535 bytes, UTF-8 safe: 65,000 chars)
-        if (mb_strlen($request->content, 'UTF-8') > 65000) {
-            throw new InvalidArgumentException(
-                'Comment content exceeds maximum length of 65,000 characters'
+        //  Validate maximum length (consistent with DB: TEXT = 65,535 bytes)
+        if (mb_strlen($request->content) > 65000) {
+            throw ValidationException::withMessages([
+                'content' => ['Comment exceeds maximum allowed length']
+            ]);
+        }
+
+        //  Validate that module is allowed
+        $allowedModules = ['Project', 'Quotes', 'Calendar', 'Accounts', 'Contacts', 'HelpDesk'];
+        if (!in_array($request->module, $allowedModules, true)) {
+            throw new \InvalidArgumentException(
+                "Module '{$request->module}' not allowed for comments. " .
+                "Valid modules: " . implode(', ', $allowedModules)
             );
         }
 
-        // Task/record ID must be positive
-        if ($request->taskId <= 0) {
-            throw new InvalidArgumentException('Related task ID must be a positive integer');
+        //  Validate that relatedId is positive
+        if ($request->relatedId <= 0) {
+            throw new \InvalidArgumentException('Related record ID must be positive');
         }
 
-        // User ID must be positive (0 is reserved for anonymous, handled separately)
-        if ($request->userId < 0) {
-            throw new InvalidArgumentException('User ID cannot be negative');
+        //  Validate that userId is positive
+        if ($request->userId <= 0) {
+            throw new \InvalidArgumentException('User ID must be positive');
         }
 
-        // Parent comment ID, if provided, must be positive
+        //  Validate that parentCommentId, if exists, is positive
         if ($request->parentCommentId !== null && $request->parentCommentId <= 0) {
-            throw new InvalidArgumentException('Parent comment ID must be a positive integer');
-        }
-    }
-
-    /**
-     * Verify that the user has permission to comment on the related record
-     * 
-     * Business rules:
-     * - Internal users can comment on any record they have access to
-     * - Customer portal users can only comment on records they own or are assigned to
-     * - Deleted or archived records cannot receive new comments
-     * 
-     * @param int $taskId ID of the related task/record
-     * @param int $userId ID of the user attempting to create the comment
-     * @return void
-     * 
-     * @throws DomainException If user lacks permission to comment
-     * @throws \RuntimeException If related record cannot be verified
-     */
-    protected function verifyCommentPermission(int $taskId, int $userId): void
-    {
-        // TODO: Implement permission check via repository or authorization service
-        // Example implementation:
-        // $task = $this->taskRepository->findById($taskId);
-        // if (!$task) {
-        //     throw new DomainException('Cannot comment on non-existent task');
-        // }
-        // if (!$task->canBeCommentedBy($userId)) {
-        //     throw new DomainException('User does not have permission to comment on this task');
-        // }
-        
-        // For now, assume permission is granted (implement based on your auth system)
-    }
-
-    /**
-     * Verify that the parent comment exists and is accessible for threading
-     * 
-     * Business rules:
-     * - Parent comment must exist and not be deleted
-     * - User must have visibility permission for the parent comment
-     * - Threading depth limit (optional): prevent excessively nested replies
-     * 
-     * @param int $parentCommentId ID of the parent comment being replied to
-     * @param int $userId ID of the user attempting to create the reply
-     * @return void
-     * 
-     * @throws DomainException If parent comment is invalid or inaccessible
-     */
-    protected function verifyParentComment(int $parentCommentId, int $userId): void
-    {
-        // TODO: Implement parent comment verification
-        // Example:
-        // $parent = $this->repository->findById($parentCommentId);
-        // if (!$parent) {
-        //     throw new DomainException('Cannot reply to non-existent comment');
-        // }
-        // if (!$parent->isVisibleTo($userId, $this->isInternalUser($userId))) {
-        //     throw new DomainException('Cannot reply to private comment');
-        // }
-        // if ($this->getThreadingDepth($parentCommentId) >= 10) {
-        //     throw new DomainException('Maximum reply depth exceeded');
-        // }
-    }
-
-    /**
-     * Validate attachment filename if provided
-     * 
-     * Business rules:
-     * - Filename must not be empty
-     * - Filename must not contain path traversal characters
-     * - File extension must be in allowed list (if extension-based validation is used)
-     * 
-     * @param string $filename Filename to validate
-     * @return void
-     * 
-     * @throws InvalidArgumentException If filename fails validation
-     */
-    protected function validateAttachment(string $filename): void
-    {
-        $filename = trim($filename);
-        
-        if ($filename === '') {
-            throw new InvalidArgumentException('Attachment filename cannot be empty');
+            throw new \InvalidArgumentException('Parent comment ID must be positive');
         }
 
-        // Prevent path traversal attacks
-        if (str_contains($filename, '..') || str_contains($filename, '/')) {
-            throw new InvalidArgumentException('Invalid attachment filename');
-        }
-
-        // Optional: Validate file extension against allowed list
-        $allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'gif', 'txt'];
-        $extension = pathinfo($filename, PATHINFO_EXTENSION);
-        
-        if (!empty($extension) && !in_array(strtolower($extension), $allowedExtensions, true)) {
-            throw new InvalidArgumentException(
-                "File extension '.{$extension}' is not allowed for attachments"
+        //  Validate that user has permission to comment on this record
+        // (This validation might require a repository query or permissions service)
+        if (!$this->canUserCommentOnRecord($request->userId, $request->module, $request->relatedId)) {
+            throw new \InvalidArgumentException(
+                'You do not have permission to comment on this record'
             );
         }
     }
 
     /**
-     * Check if a user is an internal CRM user (vs. customer portal user)
+     * Check if a user can comment on a specific record
      * 
-     * @param int $userId User ID to check
-     * @return bool True if internal user, false if customer portal user
-     * 
-     * @internal Used for permission checks; implementation depends on auth system
+     * @param int $userId
+     * @param string $module
+     * @param int $recordId
+     * @return bool
      */
-    protected function isInternalUser(int $userId): bool
+    private function canUserCommentOnRecord(int $userId, string $module, int $recordId): bool
     {
-        // TODO: Implement based on your authentication/authorization system
-        // Example: Check if user exists in vtiger_users table
-        // return $this->userRepository->isInternalUser($userId);
+        //  Basic implementation: allow if user is owner or admin
+        // In production, this should consult a more sophisticated permissions service
         
-        // Default assumption: all authenticated users are internal
+        // For now, allow all authenticated comments
+        // (Real validation will depend on your Vtiger business logic)
         return true;
     }
 }

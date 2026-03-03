@@ -9,11 +9,13 @@ use App\Application\UseCases\Comment\GetCommentsByRelatedIdUseCase;
 use App\Application\UseCases\Comment\UpdateCommentUseCase;
 use App\Application\UseCases\Comment\DeleteCommentUseCase;
 use App\Http\Controllers\Controller;
+use App\Infrastructure\Mappers\CommentMapper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use DomainException;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -38,8 +40,8 @@ use RuntimeException;
  * 
  * @see \App\Application\UseCases\Comment\GetCommentsByRelatedIdUseCase
  * @see \App\Application\UseCases\Comment\CreateCommentUseCase
- * @see \App\Application\DTOs\CommentDto
- * @see \App\Application\DTOs\CreateCommentRequest
+ * @see \App\Application\DTOs\Comment\CommentDto
+ * @see \App\Application\DTOs\Comment\CreateCommentRequest
  */
 class CommentController extends Controller
 {
@@ -58,14 +60,14 @@ class CommentController extends Controller
     private readonly CreateCommentUseCase $createCommentUseCase;
 
     /**
-     * Use case for updating existing comments
+     * Use case for updating existing comments (optional)
      * 
      * @var UpdateCommentUseCase|null
      */
     private readonly ?UpdateCommentUseCase $updateCommentUseCase;
 
     /**
-     * Use case for deleting comments
+     * Use case for deleting comments (optional)
      * 
      * @var DeleteCommentUseCase|null
      */
@@ -127,11 +129,11 @@ class CommentController extends Controller
     public function index(Request $request, string $module, int $relatedId): JsonResponse
     {
         try {
-            // Extract pagination parameters with defaults and bounds
+            //  Extract pagination parameters with defaults and bounds
             $page = max(1, (int) $request->get('page', 1));
             $perPage = min(max(1, (int) $request->get('limit', 50)), 100);
 
-            // Execute use case with validated parameters
+            //  Execute use case with validated parameters
             $paginator = $this->getCommentsByRelatedIdUseCase->execute(
                 relatedId: $relatedId,
                 module: $module,
@@ -139,7 +141,7 @@ class CommentController extends Controller
                 perPage: $perPage
             );
 
-            // Transform Comment entities to DTOs for API response
+            //  Transform Comment entities to DTOs for API response
             $dtos = $paginator->getCollection()->map(
                 fn($comment) => $comment instanceof CommentDto
                     ? $comment
@@ -157,15 +159,15 @@ class CommentController extends Controller
                 ],
             ]);
         } catch (InvalidArgumentException $e) {
-            // Invalid input parameters (400 Bad Request)
+            //  Invalid input parameters (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
         } catch (RuntimeException $e) {
-            // Database or infrastructure error (500 Internal Server Error)
+            //  Database or infrastructure error (500 Internal Server Error)
             return response()->json([
                 'error' => 'Failed to retrieve comments: ' . $e->getMessage()
             ], 500);
         } catch (\Exception $e) {
-            // Unexpected error (500 Internal Server Error)
+            //  Unexpected error (500 Internal Server Error)
             return response()->json([
                 'error' => 'An unexpected error occurred: ' . $e->getMessage()
             ], 500);
@@ -184,12 +186,26 @@ class CommentController extends Controller
      * @param string $module Module type of the related record (e.g., 'Calendar', 'Project')
      * @param int $relatedId ID of the related record (e.g., task ID)
      * 
-     * @return JsonResponse JSON response with created comment ID and message
+     * @return JsonResponse JSON response with created comment data
      * 
      * @throws ValidationException If request data fails framework validation (422)
      * @throws InvalidArgumentException If domain validation fails (400)
      * @throws DomainException If business rules are violated (403)
      * @throws RuntimeException If persistence operation fails (500)
+     * 
+     * @response 201 {
+     *   "data": {
+     *     "id": 456,
+     *     "content": "Task completed successfully!",
+     *     "userName": "Maria Garcia",
+     *     "createdAt": "2026-02-27 14:30:00",
+     *     "isPrivate": false,
+     *     ...
+     *   }
+     * }
+     * @response 401 { "error": "User not authenticated" }
+     * @response 422 { "error": "Validation failed", "messages": { field: [errors] } }
+     * @response 500 { "error": "Internal error creating comment" }
      * 
      * @example
      * // Create a top-level comment on task #123
@@ -198,12 +214,6 @@ class CommentController extends Controller
      *   "content": "Task completed successfully!",
      *   "parent_comment_id": null,
      *   "attachment": null
-     * }
-     * 
-     * Response (201 Created):
-     * {
-     *   "message": "Comment created successfully",
-     *   "comment_id": 456
      * }
      * 
      * @example
@@ -215,59 +225,67 @@ class CommentController extends Controller
      *   "attachment": "proposal.pdf"
      * }
      */
-    public function store(Request $request, string $module, int $relatedId): JsonResponse
+    public function store(Request $request, string $module, int $recordId): JsonResponse
     {
         try {
-            // Get authenticated user from JWT middleware
-            $user = $request->attributes->get('auth_user');
-            if (!$user) {
-                return response()->json(['error' => 'Unauthorized'], 401);
-            }
-
-            // Framework-level validation (HTTP layer)
+            //  Validate incoming request data
             $validated = $request->validate([
                 'content' => 'required|string|max:65000',
                 'parent_comment_id' => 'nullable|integer|min:1',
+                'is_private' => 'nullable|boolean',
                 'attachment' => 'nullable|string|max:255',
             ]);
 
-            // Create DTO with validated and sanitized data
-            $createRequest = new CreateCommentRequest(
-                taskId: $relatedId,
+            //  Get authenticated user from JWT middleware
+            $authenticatedUser = $request->attributes->get('auth_user');
+            if (!$authenticatedUser || !$authenticatedUser->getId()) {
+                return response()->json(['error' => 'User not authenticated'], 401);
+            }
+
+            //  Create DTO from validated data
+            $createCommentRequest = new CreateCommentRequest(
+                module: $module,
+                relatedId: $recordId,
                 content: $validated['content'],
-                userId: $user->getId(),
+                userId: $authenticatedUser->getId(),
                 parentCommentId: $validated['parent_comment_id'] ?? null,
+                isPrivate: $validated['is_private'] ?? null,
                 attachment: $validated['attachment'] ?? null,
             );
 
-            // Execute use case: domain validation + persistence
-            $commentId = $this->createCommentUseCase->execute($createRequest);
+            //  Execute UseCase
+            $comment = $this->createCommentUseCase->execute($createCommentRequest);
 
+            //  Return response using mapper for API format
             return response()->json([
-                'message' => 'Comment created successfully',
-                'comment_id' => $commentId,
+                'data' => CommentMapper::toApi($comment),
             ], 201);
+
         } catch (ValidationException $e) {
-            // HTTP validation errors (422 Unprocessable Entity)
+            //  Handle Laravel validation errors (422 Unprocessable Entity)
             return response()->json([
                 'error' => 'Validation failed',
-                'messages' => $e->errors()
+                'messages' => $e->errors(),
             ], 422);
-        } catch (InvalidArgumentException $e) {
-            // Domain validation errors (400 Bad Request)
-            return response()->json(['error' => $e->getMessage()], 400);
-        } catch (DomainException $e) {
-            // Business rule violations (403 Forbidden)
-            return response()->json(['error' => $e->getMessage()], 403);
-        } catch (RuntimeException $e) {
-            // Persistence or infrastructure errors (500)
+
+        } catch (\InvalidArgumentException $e) {
+            //  Handle business rule validation errors (400 Bad Request)
             return response()->json([
-                'error' => 'Failed to create comment: ' . $e->getMessage()
-            ], 500);
+                'error' => 'Invalid request: ' . $e->getMessage(),
+            ], 400);
+
         } catch (\Exception $e) {
-            // Unexpected errors (500)
+            //  Log error with context for debugging
+            Log::error('Error creating comment: ' . $e->getMessage(), [
+                'module' => $module,
+                'recordId' => $recordId,
+                'userId' => $authenticatedUser->getId() ?? null,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            //  Return generic error message for unexpected failures (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'Internal error creating comment',
             ], 500);
         }
     }
@@ -286,6 +304,11 @@ class CommentController extends Controller
      * 
      * @throws InvalidArgumentException If commentId is invalid
      * @throws RuntimeException If repository operation fails
+     * 
+     * @response 200 { "data": { CommentDto } }
+     * @response 400 { "error": "Invalid comment ID" }
+     * @response 404 { "error": "Comment not found" }
+     * @response 500 { "error": "Failed to retrieve comment" }
      * 
      * @example
      * // Get comment #456
@@ -314,8 +337,10 @@ class CommentController extends Controller
 
             return response()->json(['error' => 'Not implemented'], 501);
         } catch (InvalidArgumentException $e) {
+            //  Invalid comment ID (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
         } catch (\Exception $e) {
+            //  Unexpected error (500 Internal Server Error)
             return response()->json([
                 'error' => 'Failed to retrieve comment: ' . $e->getMessage()
             ], 500);
@@ -339,6 +364,11 @@ class CommentController extends Controller
      * @throws DomainException If user is not authorized to update (403)
      * @throws RuntimeException If update operation fails (500)
      * 
+     * @response 200 { "message": "Comment updated successfully" }
+     * @response 403 { "error": "Not authorized to update this comment" }
+     * @response 422 { "error": "Validation failed", "messages": {...} }
+     * @response 501 { "error": "Update not implemented" }
+     * 
      * @example
      * // Update comment content
      * PATCH /api/comments/456
@@ -350,15 +380,18 @@ class CommentController extends Controller
     public function update(Request $request, int $commentId): JsonResponse
     {
         try {
+            //  Check if update functionality is implemented
             if (!$this->updateCommentUseCase) {
                 return response()->json(['error' => 'Update not implemented'], 501);
             }
 
+            //  Verify user authentication
             $user = $request->attributes->get('auth_user');
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
+            //  Validate incoming update data
             $validated = $request->validate([
                 'content' => 'nullable|string|max:65000',
                 'reason_to_edit' => 'nullable|string|max:255',
@@ -371,14 +404,20 @@ class CommentController extends Controller
             // $success = $this->updateCommentUseCase->execute($commentId, $updateRequest, $user->getId());
 
             return response()->json(['error' => 'Not implemented'], 501);
+
         } catch (ValidationException $e) {
+            //  Handle validation errors (422 Unprocessable Entity)
             return response()->json([
                 'error' => 'Validation failed',
                 'messages' => $e->errors()
             ], 422);
+
         } catch (DomainException $e) {
+            //  Handle authorization errors (403 Forbidden)
             return response()->json(['error' => $e->getMessage()], 403);
+
         } catch (\Exception $e) {
+            //  Handle unexpected errors (500 Internal Server Error)
             return response()->json([
                 'error' => 'Failed to update comment: ' . $e->getMessage()
             ], 500);
@@ -393,29 +432,39 @@ class CommentController extends Controller
      * Marks a comment as deleted. Only the author or an admin
      * can delete a comment (enforced by business rules).
      * 
+     * @param Request $request HTTP request (used for authentication and optional reason)
      * @param int $commentId Unique identifier of the comment to delete
      * 
      * @return JsonResponse JSON response with deletion result
      * 
+     * @throws InvalidArgumentException If commentId is invalid (400)
      * @throws DomainException If user is not authorized to delete (403)
      * @throws RuntimeException If deletion operation fails (500)
+     * 
+     * @response 200 { "message": "Comment deleted successfully", "comment_id": 456 }
+     * @response 401 { "error": "Unauthorized" }
+     * @response 403 { "error": "Not authorized to delete this comment" }
+     * @response 404 { "error": "Comment not found or already deleted" }
+     * @response 501 { "error": "Delete not implemented" }
      */
     public function destroy(Request $request, int $commentId): JsonResponse
     {
         try {
+            //  Check if delete functionality is implemented
             if (!$this->deleteCommentUseCase) {
                 return response()->json(['error' => 'Delete not implemented'], 501);
             }
 
+            //  Verify user authentication
             $user = $request->attributes->get('auth_user');
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
-            // Optional: Get deletion reason for audit
+            //  Optional: Get deletion reason for audit trail
             $reason = $request->input('reason');
 
-            // Execute use case
+            //  Execute use case
             $success = $this->deleteCommentUseCase->execute(
                 commentId: $commentId,
                 userId: $user->getId(),
@@ -423,18 +472,26 @@ class CommentController extends Controller
             );
 
             if (!$success) {
+                //  Comment not found or already deleted (404 Not Found)
                 return response()->json(['error' => 'Comment not found or already deleted'], 404);
             }
 
+            //  Successful deletion (200 OK)
             return response()->json([
                 'message' => 'Comment deleted successfully',
                 'comment_id' => $commentId,
             ]);
+
         } catch (InvalidArgumentException $e) {
+            //  Invalid input parameters (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
+
         } catch (DomainException $e) {
+            //  Authorization error (403 Forbidden)
             return response()->json(['error' => $e->getMessage()], 403);
+
         } catch (RuntimeException $e) {
+            //  Infrastructure error (500 Internal Server Error)
             return response()->json([
                 'error' => 'Failed to delete comment: ' . $e->getMessage()
             ], 500);

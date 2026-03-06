@@ -260,20 +260,17 @@ class CommentController extends Controller
             return response()->json([
                 'data' => CommentMapper::toApi($comment),
             ], 201);
-
         } catch (ValidationException $e) {
             //  Handle Laravel validation errors (422 Unprocessable Entity)
             return response()->json([
                 'error' => 'Validation failed',
                 'messages' => $e->errors(),
             ], 422);
-
         } catch (\InvalidArgumentException $e) {
             //  Handle business rule validation errors (400 Bad Request)
             return response()->json([
                 'error' => 'Invalid request: ' . $e->getMessage(),
             ], 400);
-
         } catch (\Exception $e) {
             //  Log error with context for debugging
             Log::error('Error creating comment: ' . $e->getMessage(), [
@@ -404,18 +401,15 @@ class CommentController extends Controller
             // $success = $this->updateCommentUseCase->execute($commentId, $updateRequest, $user->getId());
 
             return response()->json(['error' => 'Not implemented'], 501);
-
         } catch (ValidationException $e) {
             //  Handle validation errors (422 Unprocessable Entity)
             return response()->json([
                 'error' => 'Validation failed',
                 'messages' => $e->errors()
             ], 422);
-
         } catch (DomainException $e) {
             //  Handle authorization errors (403 Forbidden)
             return response()->json(['error' => $e->getMessage()], 403);
-
         } catch (\Exception $e) {
             //  Handle unexpected errors (500 Internal Server Error)
             return response()->json([
@@ -481,20 +475,97 @@ class CommentController extends Controller
                 'message' => 'Comment deleted successfully',
                 'comment_id' => $commentId,
             ]);
-
         } catch (InvalidArgumentException $e) {
             //  Invalid input parameters (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
-
         } catch (DomainException $e) {
             //  Authorization error (403 Forbidden)
             return response()->json(['error' => $e->getMessage()], 403);
-
         } catch (RuntimeException $e) {
             //  Infrastructure error (500 Internal Server Error)
             return response()->json([
                 'error' => 'Failed to delete comment: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    // ========================================================================
+    // TASK-SPECIFIC COMMENT METHODS (Nested routes: /api/tasks/{taskId}/comments)
+    // ========================================================================
+
+    /**
+     * List comments for a specific task
+     * 
+     * GET /api/tasks/{taskId}/comments
+     * 
+     * Wrapper around index() with module hardcoded to 'Calendar'.
+     * 
+     * @param Request $request HTTP request with optional pagination parameters
+     * @param int $taskId Task ID (injected from nested route)
+     * 
+     * @return JsonResponse JSON response with paginated comments
+     * 
+     * @see self::index()
+     */
+    public function indexByTask(Request $request, int $taskId): JsonResponse
+    {
+        // Delegate to generic method with module = 'Calendar'
+        return $this->index($request, module: 'Calendar', relatedId: $taskId);
+    }
+
+    /**
+     * Create a comment on a specific task
+     * 
+     * POST /api/tasks/{taskId}/comments
+     * 
+     * Wrapper around store() with module hardcoded to 'Calendar'.
+     * 
+     * @param Request $request HTTP request with comment creation data
+     * @param int $taskId Task ID (injected from nested route)
+     * 
+     * @return JsonResponse JSON response with created comment
+     * 
+     * @see self::store()
+     */
+    public function storeByTask(Request $request, int $taskId): JsonResponse
+    {
+        // Delegate to generic method with module = 'Calendar'
+        return $this->store($request, module: 'Calendar', recordId: $taskId);
+    }
+
+    /**
+     * Update a comment on a task (optional, if needed)
+     * 
+     * PATCH /api/tasks/{taskId}/comments/{commentId}
+     * 
+     * @param Request $request HTTP request with update data
+     * @param int $taskId Task ID (for authorization context)
+     * @param int $commentId Comment ID to update
+     * 
+     * @return JsonResponse
+     */
+    public function updateByTask(Request $request, int $taskId, int $commentId): JsonResponse
+    {
+        // Optional: Add task-specific authorization logic here
+        // For now, delegate to generic update
+        return $this->update($request, $commentId);
+    }
+
+    /**
+     * Delete a comment on a task (optional, if needed)
+     * 
+     * DELETE /api/tasks/{taskId}/comments/{commentId}
+     * 
+     * @param Request $request HTTP request
+     * @param int $taskId Task ID (for authorization context)
+     * @param int $commentId Comment ID to delete
+     * 
+     * @return JsonResponse
+     */
+    public function destroyByTask(Request $request, int $taskId, int $commentId): JsonResponse
+    {
+        // Optional: Verify comment belongs to this task before deleting
+        // For now, delegate to generic destroy
+        return $this->destroy($request, $commentId);
     }
 }

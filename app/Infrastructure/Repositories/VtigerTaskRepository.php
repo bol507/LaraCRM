@@ -491,7 +491,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                     ->where('activityid', $taskId)
                     ->update([
                         'status' => $request->status,
-                        'modifiedtime' => $now,
+                        //'modifiedtime' => $now,  // not updating modifiedtime
                     ]);
 
                 if ($updated === 0) {

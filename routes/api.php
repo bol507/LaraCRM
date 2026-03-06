@@ -83,6 +83,9 @@ Route::middleware('jwt')->group(function () {
     Route::prefix('comments')->group(function () {
         Route::get('/{module}/{relatedId}', [CommentController::class, 'index']);
         Route::post('/{module}/{relatedId}', [CommentController::class, 'store']);
+        Route::get('/{commentId}', [CommentController::class, 'show']);
+        Route::patch('/{commentId}', [CommentController::class, 'update']);
+        Route::delete('/{commentId}', [CommentController::class, 'destroy']);
     });
 
     // Attachment Routes 
@@ -93,10 +96,22 @@ Route::middleware('jwt')->group(function () {
     });
 
     Route::prefix('tasks')->group(function () {
-        Route::get('/', [TaskController::class, 'index']);           // List tasks
-        Route::post('/', [TaskController::class, 'store']);          // Create task
-        Route::patch('/{taskId}/status', [TaskController::class, 'updateStatus']); // Update status
-        Route::delete('/{taskId}', [TaskController::class, 'destroy']); // Delete task
+        // --- Task CRUD ---
+        Route::get('/', [TaskController::class, 'index']);                    // GET /api/tasks
+        Route::post('/', [TaskController::class, 'store']);                   // POST /api/tasks
+        Route::get('/{taskId}', [TaskController::class, 'show']);             // GET /api/tasks/{id}
+        Route::patch('/{taskId}', [TaskController::class, 'update']);         // PATCH /api/tasks/{id}
+        Route::patch('/{taskId}/status', [TaskController::class, 'updateStatus']); // PATCH /api/tasks/{id}/status
+        Route::delete('/{taskId}', [TaskController::class, 'destroy']);       // DELETE /api/tasks/{id}
+
+        // --- Comments on Tasks (Nested) ---
+        // These routes automatically receive {taskId} as parameter
+        Route::prefix('{taskId}/comments')->group(function () {
+            Route::get('/', [CommentController::class, 'index']);             // GET /api/tasks/{id}/comments
+            Route::post('/', [CommentController::class, 'store']);            // POST /api/tasks/{id}/comments
+            // Opcional: Route::patch('/{commentId}', [CommentController::class, 'updateByTask']);
+            // Opcional: Route::delete('/{commentId}', [CommentController::class, 'destroyByTask']);
+        });
     });
 
     Route::prefix('dashboard')->group(function () {
@@ -107,7 +122,7 @@ Route::middleware('jwt')->group(function () {
 
         // Activity Chart
         Route::get('/activity', [DashboardController::class, 'getActivityData']);
-        
+
         // Dashboard metrics
         Route::get('/metrics', [DashboardController::class, 'getMetrics']);
     });

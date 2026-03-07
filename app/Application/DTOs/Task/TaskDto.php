@@ -8,9 +8,41 @@ use App\Domain\Entities\Task;
  * Task Data Transfer Object
  * 
  * Used to transfer task data between layers and for API responses.
+ * Transforms domain Task entities into API-ready data structures.
+ * 
+ * @package App\Application\DTOs\Task
+ * @author Bolivar Delgado <bolivar.delgado@gmail.com>
+ * @since 1.0.0
+ * 
+ * @see \App\Domain\Entities\Task
+ * @see \App\Application\UseCases\Task\GetTasksUseCase
  */
 class TaskDto
 {
+    /**
+     * Create a new TaskDto instance
+     * 
+     * @param int $id Task unique identifier
+     * @param string $title Task title/subject
+     * @param string|null $description Task detailed description
+     * @param string $priority Task priority (Low, Medium, High)
+     * @param string $status Task current status
+     * @param string $dueDate Task due date (Y-m-d format)
+     * @param string|null $dueTime Task end time (HH:MM format)
+     * @param string $startDate Task start date (Y-m-d format)
+     * @param string|null $startTime Task start time (HH:MM format)
+     * @param string|null $location Task location
+     * @param int|null $relatedRecordId Related CRM entity ID
+     * @param string|null $relatedModuleType Related CRM module type
+     * @param int $assignedUserId ID of assigned user
+     * @param string|null $assignedUserName Name of assigned user
+     * @param string|null $assignedUserEmail Email of assigned user
+     * @param bool $completed Whether task is completed
+     * @param bool $isOverdue Whether task is overdue
+     * @param bool $isHighPriority Whether task is high priority
+     * @param string $createdAt Creation timestamp (Y-m-d H:i:s format)
+     * @param string $updatedAt Last update timestamp (Y-m-d H:i:s format)
+     */
     public function __construct(
         public readonly int $id,
         public readonly string $title,
@@ -35,36 +67,53 @@ class TaskDto
     ) {}
 
     /**
-     * Create DTO from Entity
+     * Create DTO from domain Task entity
+     * 
+     * Transforms a Task domain entity into a DTO for API responses.
+     * Uses entity getters for proper encapsulation.
+     * 
+     * @param Task $task Domain entity to transform
+     * @return self New TaskDto instance
+     * 
+     * @example
+     * $dto = TaskDto::fromEntity($task);
+     * $array = $dto->toArray();
      */
-    public static function fromEntity(Task $task, ?string $assignedUserName = null, ?string $assignedUserEmail = null): self
+    public static function fromEntity(Task $task): self
     {
         return new self(
-            id: $task->id,
-            title: $task->subject,
-            description: $task->description,
-            priority: $task->priority ?: 'Medium',
-            status: $task->status ?: 'Not Started',
-            dueDate: $task->dueDate?->format('Y-m-d') ?? $task->dateStart->format('Y-m-d'),
-            dueTime: $task->timeEnd,
-            startDate: $task->dateStart->format('Y-m-d'),
-            startTime: $task->timeStart,
-            location: $task->location,
-            relatedRecordId: $task->relatedRecordId,
-            relatedModuleType: $task->relatedModuleType,
-            assignedUserId: $task->assignedUserId,
-            assignedUserName: $assignedUserName,
-            assignedUserEmail: $assignedUserEmail,
-            completed: $task->isCompleted(),
-            isOverdue: $task->isOverdue(),
-            isHighPriority: $task->isHighPriority(),
-            createdAt: $task->createdAt->format('Y-m-d H:i:s'),
-            updatedAt: $task->updatedAt->format('Y-m-d H:i:s'),
+            id: $task->getId(),                                          
+            title: $task->getSubject(),                                  
+            description: $task->getDescription(),                        
+            priority: $task->getPriority() ?? 'Medium',                  
+            status: $task->getStatus() ?? 'Not Started',                 
+            dueDate: $task->getDueDate()?->format('Y-m-d') 
+                     ?? $task->getDateStart()->format('Y-m-d'),          
+            dueTime: $task->getTimeEnd(),                                
+            startDate: $task->getDateStart()->format('Y-m-d'),           
+            startTime: $task->getTimeStart(),                            
+            location: $task->getLocation(),                              
+            relatedRecordId: $task->getRelatedRecordId(),                
+            relatedModuleType: $task->getRelatedModuleType(),            
+            assignedUserId: $task->getAssignedUserId(),                  
+            assignedUserName: $task->getAssignedUserName(),              
+            assignedUserEmail: $task->getAssignedUserEmail(),             
+            completed: $task->isCompleted(),                              
+            isOverdue: $task->isOverdue(),                                
+            isHighPriority: $task->isHighPriority(),                      
+            createdAt: $task->getCreatedAt()->format('Y-m-d H:i:s'),     
+            updatedAt: $task->getUpdatedAt()->format('Y-m-d H:i:s'),     
         );
     }
 
     /**
-     * Convert to array for JSON response
+     * Convert DTO to array for JSON serialization
+     * 
+     * @return array<string, mixed> Associative array representation
+     * 
+     * @example
+     * // In controller:
+     * return response()->json($dto->toArray());
      */
     public function toArray(): array
     {

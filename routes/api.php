@@ -107,10 +107,17 @@ Route::middleware('jwt')->group(function () {
         // --- Comments on Tasks (Nested) ---
         // These routes automatically receive {taskId} as parameter
         Route::prefix('{taskId}/comments')->group(function () {
-            Route::get('/', [CommentController::class, 'index']);             // GET /api/tasks/{id}/comments
-            Route::post('/', [CommentController::class, 'store']);            // POST /api/tasks/{id}/comments
+            Route::get('/', [CommentController::class, 'indexByTask']);            // GET /api/tasks/{id}/comments
+            Route::post('/', [CommentController::class, 'storeByTask']);            // POST /api/tasks/{id}/comments
             // Opcional: Route::patch('/{commentId}', [CommentController::class, 'updateByTask']);
             // Opcional: Route::delete('/{commentId}', [CommentController::class, 'destroyByTask']);
+        });
+
+        // --- Attachments on Tasks (Nested) ---
+        Route::prefix('{taskId}/attachments')->group(function () {
+            Route::get('/', [AttachmentController::class, 'indexByTask']);      // GET /api/tasks/{id}/attachments
+            Route::post('/', [AttachmentController::class, 'uploadByTask']);     // POST /api/tasks/{id}/attachments
+            Route::delete('/{attachmentId}', [AttachmentController::class, 'destroyByTask']); // DELETE /api/tasks/{id}/attachments/{attId}
         });
     });
 

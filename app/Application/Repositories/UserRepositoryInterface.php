@@ -31,7 +31,7 @@ interface UserRepositoryInterface
      * @param string|null $search Optional search term for filtering
      * @return LengthAwarePaginator Paginated collection of User entities
      */
-    public function getAll(int $page = 1, int $perPage = 20, ?string $search = null): LengthAwarePaginator;
+    public function getAll(int $page, int $perPage, ?string $search): LengthAwarePaginator;
 
     /**
      * Find a user by their unique identifier.
@@ -202,4 +202,21 @@ interface UserRepositoryInterface
      * @return User[] Array of User entities with the specified role
      */
     public function findByRole(string $role): array;
+
+    /**
+     * Check if a user has administrator privileges
+     * 
+     * @param int $userId User ID to check
+     * @return bool True if user is administrator, false otherwise
+     */
+    public function isAdmin(int $userId): bool;
+
+    /**
+     * Get all active users
+     * 
+     * @param int $limit Maximum number of users to return
+     * @param int $offset Offset for pagination
+     * @return User[] Array of user entities
+     */
+    public function findActiveUsers(int $limit = 100, int $offset = 0): array;
 }

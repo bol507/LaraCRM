@@ -267,6 +267,26 @@ class Task
      */
     public readonly ?string $durationMinutes;
 
+
+     /**
+     * Name of the user assigned to the task
+     * 
+     * Derived from vtiger_users.first_name and vtiger_users.last_name.
+     * Used for display purposes in the UI without requiring additional queries.
+     * 
+     * @var string|null
+     */
+    public readonly ?string $assignedUserName;
+
+    /**
+     * Email of the user assigned to the task
+     * 
+     * Derived from vtiger_users.email1. Used for notifications and display.
+     * 
+     * @var string|null
+     */
+    public readonly ?string $assignedUserEmail;
+
     /**
      * Constructor for Task entity
      * 
@@ -317,6 +337,8 @@ class Task
         bool $sendNotification = false,
         ?string $durationHours = null,
         ?string $durationMinutes = null,
+        ?string $assignedUserName = null,  
+        ?string $assignedUserEmail = null,
     ) {
         // Validate required fields
         $this->validateId($id);
@@ -343,6 +365,8 @@ class Task
         $this->sendNotification = $sendNotification;
         $this->durationHours = $durationHours;
         $this->durationMinutes = $durationMinutes;
+        $this->assignedUserName = $assignedUserName; 
+        $this->assignedUserEmail = $assignedUserEmail;
     }
 
     // ========================================================================
@@ -467,6 +491,52 @@ class Task
     public function getAssignedUserId(): int
     {
         return $this->assignedUserId;
+    }
+
+    /**
+     * Get the task duration in hours
+     * 
+     * Optional field for time estimation or tracking.
+     * Used for workload planning and billing.
+     * 
+     * @return string|null Duration in hours, or null if not set
+     */
+    public function getDurationHours(): ?string
+    {
+        return $this->durationHours;
+    }
+
+    /**
+     * Get the task duration in minutes
+     * 
+     * Optional field for more granular time estimation.
+     * Combined with durationHours for total duration.
+     * 
+     * @return string|null Duration in minutes, or null if not set
+     */
+    public function getDurationMinutes(): ?string
+    {
+        return $this->durationMinutes;
+    }
+
+     /**
+     * Get the name of the assigned user
+     * 
+     * @return string|null Assigned user's full name, or null if not available
+     */
+    public function getAssignedUserName(): ?string
+    {
+        return $this->assignedUserName;
+    }
+
+    /**
+     * Get the email of the assigned user
+     * 
+     * @return string|null Assigned user's email, or null if not available
+     */
+    public function getAssignedUserEmail(): ?string
+    {
+        return $this->assignedUserEmail;
     }
 
     /**
@@ -670,6 +740,20 @@ class Task
         return $this->assignedUserId === $userId;
     }
 
+     /**
+     * Check if notifications should be sent for this task
+     * 
+     * Business rule: Notifications are sent when:
+     * - sendNotification flag is true
+     * - Task is assigned to a user (not null)
+     * 
+     * @return bool True if notifications should be sent
+     */
+    public function shouldSendNotification(): bool
+    {
+        return $this->sendNotification && $this->assignedUserId > 0;
+    }
+
     /**
      * Check if a user created this task
      * 
@@ -837,25 +921,28 @@ class Task
     {
         return [
             'id' => $this->id,
+            'title' => $this->subject,  
             'subject' => $this->subject,
-            'activityType' => $this->activityType,
-            'dateStart' => $this->dateStart->format('Y-m-d'),
-            'dueDate' => $this->dueDate?->format('Y-m-d'),
-            'timeStart' => $this->timeStart,
-            'timeEnd' => $this->timeEnd,
-            'status' => $this->status,
-            'priority' => $this->priority,
-            'location' => $this->location,
             'description' => $this->description,
-            'assignedUserId' => $this->assignedUserId,
-            'createdByUserId' => $this->createdByUserId,
+            'priority' => $this->priority,
+            'status' => $this->status,
+            'dueDate' => $this->dueDate?->format('Y-m-d'),
+            'dueTime' => $this->timeEnd,
+            'startDate' => $this->dateStart->format('Y-m-d'),
+            'startTime' => $this->timeStart,
+            'location' => $this->location,
             'relatedRecordId' => $this->relatedRecordId,
             'relatedModuleType' => $this->relatedModuleType,
-            'createdAt' => $this->createdAt->format('Y-m-d H:i:s'),
-            'updatedAt' => $this->updatedAt->format('Y-m-d H:i:s'),
-            'isCompleted' => $this->isCompleted(),
+            'assignedUserId' => $this->assignedUserId,
+            'assignedUserName' => $this->assignedUserName,  
+            'assignedUserEmail' => $this->assignedUserEmail, 
+            'completed' => $this->isCompleted(),
             'isOverdue' => $this->isOverdue(),
             'isHighPriority' => $this->isHighPriority(),
+            'durationHours' => $this->durationHours,     
+            'durationMinutes' => $this->durationMinutes, 
+            'createdAt' => $this->createdAt->format('Y-m-d H:i:s'),
+            'updatedAt' => $this->updatedAt->format('Y-m-d H:i:s'),
             'daysUntilDue' => $this->getDaysUntilDue(),
             'isDueToday' => $this->isDueToday(),
             'formattedDateRange' => $this->getFormattedDateRange(),

@@ -19,7 +19,7 @@ use Illuminate\Validation\ValidationException;
  * 
  * Responsibilities:
  * - Upload new attachments to Google Drive and persist metadata
- * - List attachments for a specific record (project, quote, etc.)
+ * - List attachments for a specific record (project, quote, task, etc.)
  * - Delete attachments with proper authorization checks
  * 
  * All responses follow JSON:API convention with standardized error handling.
@@ -35,6 +35,27 @@ use Illuminate\Validation\ValidationException;
 class AttachmentController extends Controller
 {
     /**
+     * Use case for uploading attachments
+     * 
+     * @var UploadAttachmentUseCase
+     */
+    private readonly UploadAttachmentUseCase $uploadAttachmentUseCase;
+
+    /**
+     * Use case for listing attachments
+     * 
+     * @var ListAttachmentsUseCase
+     */
+    private readonly ListAttachmentsUseCase $listAttachmentsUseCase;
+
+    /**
+     * Use case for deleting attachments
+     * 
+     * @var DeleteAttachmentUseCase
+     */
+    private readonly DeleteAttachmentUseCase $deleteAttachmentUseCase;
+
+    /**
      * Create a new AttachmentController instance
      * 
      * @param UploadAttachmentUseCase $uploadAttachmentUseCase Use case for uploading attachments
@@ -42,10 +63,14 @@ class AttachmentController extends Controller
      * @param DeleteAttachmentUseCase $deleteAttachmentUseCase Use case for deleting attachments
      */
     public function __construct(
-        private readonly UploadAttachmentUseCase $uploadAttachmentUseCase,
-        private readonly ListAttachmentsUseCase $listAttachmentsUseCase,
-        private readonly DeleteAttachmentUseCase $deleteAttachmentUseCase
-    ) {}
+        UploadAttachmentUseCase $uploadAttachmentUseCase,
+        ListAttachmentsUseCase $listAttachmentsUseCase,
+        DeleteAttachmentUseCase $deleteAttachmentUseCase
+    ) {
+        $this->uploadAttachmentUseCase = $uploadAttachmentUseCase;
+        $this->listAttachmentsUseCase = $listAttachmentsUseCase;
+        $this->deleteAttachmentUseCase = $deleteAttachmentUseCase;
+    }
 
     /**
      * Get authenticated user from request attributes
@@ -66,8 +91,14 @@ class AttachmentController extends Controller
         return $user;
     }
 
+    // ========================================================================
+    // GENERIC ATTACHMENT METHODS (for any module: /api/attachments/{module}/{recordId})
+    // ========================================================================
+
     /**
-     * Upload a new attachment
+     * Upload a new attachment (generic endpoint)
+     * 
+     * POST /api/attachments/{module}/{recordId}
      * 
      * Handles file upload to Google Drive and persists metadata to the database.
      * 
@@ -77,17 +108,10 @@ class AttachmentController extends Controller
      * 
      * @return JsonResponse
      * 
-     * @response 201 {
-     *   "message": "File uploaded successfully",
-     *   "data": { AttachmentDto }
-     * }
+     * @response 201 { "message": "File uploaded successfully", "data": { AttachmentDto } }
      * @response 401 { "error": "User not authenticated" }
-     * @response 422 { "error": "Validation failed", "messages": { field: [errors] } }
+     * @response 422 { "error": "Validation failed", "messages": {...} }
      * @response 500 { "error": "Internal server error processing file" }
-     * 
-     * @throws ValidationException If request validation fails
-     * @throws \InvalidArgumentException If business validation fails
-     * @throws \Exception If upload operation fails
      */
     public function upload(Request $request, string $module, int $recordId): JsonResponse
     {
@@ -95,57 +119,54 @@ class AttachmentController extends Controller
             $authenticatedUser = $this->getAuthenticatedUser($request);
             $authenticatedUserId = $authenticatedUser->getId();
 
-            //  Validate incoming request data
+            // Validate incoming request data
             $request->validate([
                 'file' => 'required|file|max:10240',        // Max 10MB
                 'description' => 'nullable|string|max:500',  // Optional, max 500 chars
             ]);
 
-            //  Execute upload use case
+            // Execute upload use case
             $attachment = $this->uploadAttachmentUseCase->execute(
                 $request->file('file'),
                 $module,
                 $recordId,
                 $authenticatedUserId,
-                $request->description
+                $request->input('description')
             );
 
-            //  Always use explicit integer literals for HTTP status codes
             return response()->json([
                 'message' => 'File uploaded successfully',
                 'data' => AttachmentDto::fromEntity($attachment)
-            ], 201); //  201 = Created
+            ], 201);
 
         } catch (ValidationException $e) {
-            //  Handle Laravel validation errors
             return response()->json([
                 'error' => 'Validation failed',
                 'messages' => $e->errors()
-            ], 422); //  422 = Unprocessable Entity
+            ], 422);
 
         } catch (\InvalidArgumentException $e) {
-            //  Handle business rule validation errors
             return response()->json([
                 'error' => 'Validation error: ' . $e->getMessage()
-            ], 422); //  422 = Unprocessable Entity
+            ], 422);
 
         } catch (\Exception $e) {
-            //  Log unexpected errors with context for debugging
             Log::error('Error uploading file: ' . $e->getMessage(), [
                 'module' => $module,
                 'recordId' => $recordId,
                 'userId' => $authenticatedUser->getId() ?? 'unknown'
             ]);
             
-            //  Always return 500 for unexpected server errors (explicit integer literal)
             return response()->json([
                 'error' => 'Internal server error processing file'
-            ], 500); //  500 = Internal Server Error
+            ], 500);
         }
     }
 
     /**
-     * List attachments for a specific record
+     * List attachments for a specific record (generic endpoint)
+     * 
+     * GET /api/attachments/{module}/{recordId}
      * 
      * Retrieves all attachments associated with a module/record combination.
      * 
@@ -158,35 +179,34 @@ class AttachmentController extends Controller
      * @response 200 { "data": [ AttachmentDto, ... ] }
      * @response 401 { "error": "User not authenticated" }
      * @response 500 { "error": "Error retrieving attachment list" }
-     * 
-     * @throws \Exception If listing operation fails
      */
     public function index(Request $request, string $module, int $recordId): JsonResponse
     {
         try {
-            //  Verify user authentication
+            // Verify user authentication
             $this->getAuthenticatedUser($request);
             
-            //  Execute list use case
+            // Execute list use case
             $attachments = $this->listAttachmentsUseCase->execute($module, $recordId);
             
-            //  Map entities to DTOs for API response
+            // Map entities to DTOs for API response
             $data = array_map(fn($att) => AttachmentDto::fromEntity($att), $attachments);
 
-            return response()->json(['data' => $data], 200); //  200 = OK
+            return response()->json(['data' => $data], 200);
 
         } catch (\Exception $e) {
-            //  Log error and return generic error message
             Log::error('Error listing attachments: ' . $e->getMessage());
             
             return response()->json([
                 'error' => 'Error retrieving attachment list'
-            ], 500); //  500 = Internal Server Error
+            ], 500);
         }
     }
 
     /**
-     * Delete an attachment
+     * Delete an attachment (generic endpoint)
+     * 
+     * DELETE /api/attachments/{attachmentId}
      * 
      * Removes an attachment from Google Drive and deletes its metadata from the database.
      * 
@@ -199,8 +219,6 @@ class AttachmentController extends Controller
      * @response 401 { "error": "User not authenticated" }
      * @response 404 { "error": "File not found" }
      * @response 500 { "error": "Error deleting file" }
-     * 
-     * @throws \Exception If delete operation fails
      */
     public function destroy(Request $request, int $attachmentId): JsonResponse
     {
@@ -208,30 +226,94 @@ class AttachmentController extends Controller
             $authenticatedUser = $this->getAuthenticatedUser($request);
             $authenticatedUserId = $authenticatedUser->getId();
 
-            //  Execute delete use case
+            // Execute delete use case
             $success = $this->deleteAttachmentUseCase->execute(
                 $attachmentId,
                 $authenticatedUserId
             );
 
             if (!$success) {
-                //  Return 404 if attachment was not found
                 return response()->json([
                     'error' => 'File not found'
-                ], 404); //  404 = Not Found
+                ], 404);
             }
 
             return response()->json([
                 'message' => 'File deleted successfully'
-            ], 200); //  200 = OK
+            ], 200);
 
         } catch (\Exception $e) {
-            //  Log error and return generic error message
             Log::error('Error deleting file: ' . $e->getMessage());
             
             return response()->json([
                 'error' => 'Error deleting file'
-            ], 500); //  500 = Internal Server Error
+            ], 500);
         }
+    }
+
+    // ========================================================================
+    // TASK-SPECIFIC ATTACHMENT METHODS (Nested routes: /api/tasks/{taskId}/attachments)
+    // ========================================================================
+
+    /**
+     * Upload an attachment to a specific task
+     * 
+     * POST /api/tasks/{taskId}/attachments
+     * 
+     * Wrapper around upload() with module hardcoded to 'Calendar'.
+     * 
+     * @param Request $request HTTP request containing file and optional description
+     * @param int $taskId Task ID (injected from nested route)
+     * 
+     * @return JsonResponse
+     * 
+     * @see self::upload()
+     */
+    public function uploadByTask(Request $request, int $taskId): JsonResponse
+    {
+        // Delegate to generic method with module = 'Calendar'
+        return $this->upload($request, module: 'Calendar', recordId: $taskId);
+    }
+
+    /**
+     * List attachments for a specific task
+     * 
+     * GET /api/tasks/{taskId}/attachments
+     * 
+     * Wrapper around index() with module hardcoded to 'Calendar'.
+     * 
+     * @param Request $request HTTP request (used for authentication)
+     * @param int $taskId Task ID (injected from nested route)
+     * 
+     * @return JsonResponse
+     * 
+     * @see self::index()
+     */
+    public function indexByTask(Request $request, int $taskId): JsonResponse
+    {
+        // Delegate to generic method with module = 'Calendar'
+        return $this->index($request, module: 'Calendar', recordId: $taskId);
+    }
+
+    /**
+     * Delete an attachment from a task
+     * 
+     * DELETE /api/tasks/{taskId}/attachments/{attachmentId}
+     * 
+     * Wrapper around destroy() - taskId is used for authorization context only.
+     * 
+     * @param Request $request HTTP request (used for authentication)
+     * @param int $taskId Task ID (for authorization context)
+     * @param int $attachmentId Attachment ID to delete
+     * 
+     * @return JsonResponse
+     * 
+     * @see self::destroy()
+     */
+    public function destroyByTask(Request $request, int $taskId, int $attachmentId): JsonResponse
+    {
+        // Optional: Verify attachment belongs to this task before deleting
+        // For now, delegate to generic destroy (authorization handled in UseCase)
+        return $this->destroy($request, $attachmentId);
     }
 }

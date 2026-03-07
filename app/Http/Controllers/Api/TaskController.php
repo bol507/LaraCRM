@@ -11,10 +11,13 @@ use App\Application\UseCases\Task\GetTaskUseCase;
 use App\Application\UseCases\Task\GetTasksUseCase;
 use App\Application\UseCases\Task\UpdateTaskUseCase;
 use App\Application\UseCases\Task\UpdateTaskStatusUseCase;
+use App\Application\UseCases\User\IsAdminUseCase;
 use App\Http\Controllers\Controller;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use RuntimeException;
@@ -92,6 +95,13 @@ class TaskController extends Controller
     private readonly DeleteTaskUseCase $deleteTaskUseCase;
 
     /**
+     * Use case for checking admin privileges
+     * 
+     * @var IsAdminUseCase
+     */
+    private readonly IsAdminUseCase $isAdminUseCase;
+
+    /**
      * Constructor with dependency injection
      * 
      * @param GetTasksUseCase $getTasksUseCase Use case for listing tasks
@@ -100,6 +110,7 @@ class TaskController extends Controller
      * @param UpdateTaskUseCase $updateTaskUseCase Use case for updating tasks
      * @param UpdateTaskStatusUseCase $updateTaskStatusUseCase Use case for status updates
      * @param DeleteTaskUseCase $deleteTaskUseCase Use case for soft-deleting tasks
+     * @param IsAdminUseCase $isAdminUseCase Use case for checking admin privileges
      */
     public function __construct(
         GetTasksUseCase $getTasksUseCase,
@@ -108,6 +119,7 @@ class TaskController extends Controller
         UpdateTaskUseCase $updateTaskUseCase,
         UpdateTaskStatusUseCase $updateTaskStatusUseCase,
         DeleteTaskUseCase $deleteTaskUseCase,
+        IsAdminUseCase $isAdminUseCase,
     ) {
         $this->getTasksUseCase = $getTasksUseCase;
         $this->getTaskUseCase = $getTaskUseCase;
@@ -115,6 +127,7 @@ class TaskController extends Controller
         $this->updateTaskUseCase = $updateTaskUseCase;
         $this->updateTaskStatusUseCase = $updateTaskStatusUseCase;
         $this->deleteTaskUseCase = $deleteTaskUseCase;
+        $this->isAdminUseCase = $isAdminUseCase;
     }
 
     /**
@@ -213,7 +226,6 @@ class TaskController extends Controller
                 'meta' => $result['pagination'],
                 'stats' => $result['stats'],
             ]);
-
         } catch (InvalidArgumentException $e) {
             // Invalid query parameters (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
@@ -281,7 +293,7 @@ class TaskController extends Controller
         try {
             // Execute use case to retrieve task
             $task = $this->getTaskUseCase->execute($taskId);
-            
+
             if (!$task) {
                 return response()->json(['error' => 'Task not found'], 404);
             }
@@ -290,7 +302,6 @@ class TaskController extends Controller
             $dto = $task instanceof TaskDto ? $task : TaskDto::fromEntity($task);
 
             return response()->json(['data' => $dto->toArray()]);
-
         } catch (InvalidArgumentException $e) {
             // Invalid task ID (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
@@ -366,13 +377,11 @@ class TaskController extends Controller
     public function store(Request $request): JsonResponse
     {
         try {
-            // Get authenticated user from JWT middleware
             $user = $request->attributes->get('auth_user');
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
-            // Framework-level validation (HTTP layer)
             $validated = $request->validate([
                 'subject' => 'required|string|max:255',
                 'date_start' => 'required|date',
@@ -386,9 +395,28 @@ class TaskController extends Controller
                 'related_record_id' => 'nullable|integer',
                 'related_module_type' => 'nullable|string|max:50',
                 'send_notification' => 'nullable|boolean',
+                'assigned_user_id' => 'nullable|integer|exists:vtiger_users,id',
             ]);
 
-            // Create DTO with validated and sanitized data
+            // Determine assigned user ID
+            $assignedUserId = $user->getId();
+
+            if (isset($validated['assigned_user_id']) && $validated['assigned_user_id'] !== null) {
+                $requestedAssigneeId = (int) $validated['assigned_user_id'];
+                
+                if ($requestedAssigneeId !== $user->getId()) {
+                    // ✅ Usar UseCase en lugar de acceder a BD directamente
+                    if (!$this->isAdminUseCase->execute($user->getId())) {
+                        return response()->json([
+                            'error' => 'Only administrators can assign tasks to other users',
+                            'message' => 'Solo los administradores pueden asignar tareas a otros usuarios'
+                        ], 403);
+                    }
+                    
+                    $assignedUserId = $requestedAssigneeId;
+                }
+            }
+
             $createRequest = new CreateTaskRequest(
                 subject: $validated['subject'],
                 activityType: 'Task',
@@ -400,19 +428,14 @@ class TaskController extends Controller
                 status: $validated['status'] ?? 'Not Started',
                 location: $validated['location'] ?? null,
                 description: $validated['description'] ?? null,
-                assignedUserId: $user->getId(),
+                assignedUserId: $assignedUserId,
                 relatedRecordId: $validated['related_record_id'] ?? null,
                 relatedModuleType: $validated['related_module_type'] ?? null,
                 sendNotification: $validated['send_notification'] ?? false,
             );
 
-            // Execute use case: domain validation + persistence
             $taskId = $this->createTaskUseCase->execute($createRequest);
-            
-            // Fetch created task for response
             $task = $this->getTaskUseCase->execute($taskId);
-
-            // Transform to DTO for API response
             $dto = $task ? ($task instanceof TaskDto ? $task : TaskDto::fromEntity($task)) : null;
 
             return response()->json([
@@ -421,24 +444,19 @@ class TaskController extends Controller
             ], 201);
 
         } catch (ValidationException $e) {
-            // HTTP validation errors (422 Unprocessable Entity)
             return response()->json([
                 'error' => 'Validation failed',
                 'messages' => $e->errors()
             ], 422);
         } catch (InvalidArgumentException $e) {
-            // Domain validation errors (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
         } catch (DomainException $e) {
-            // Business rule violations (403 Forbidden)
             return response()->json(['error' => $e->getMessage()], 403);
         } catch (RuntimeException $e) {
-            // Persistence or infrastructure errors (500)
             return response()->json([
                 'error' => 'Failed to create task: ' . $e->getMessage()
             ], 500);
         } catch (\Exception $e) {
-            // Unexpected errors (500)
             return response()->json([
                 'error' => 'An unexpected error occurred: ' . $e->getMessage()
             ], 500);
@@ -562,7 +580,6 @@ class TaskController extends Controller
                 'message' => 'Task updated successfully',
                 'data' => $dto?->toArray(),
             ]);
-
         } catch (ValidationException $e) {
             // HTTP validation errors (422)
             return response()->json([
@@ -655,7 +672,6 @@ class TaskController extends Controller
                 'task_id' => $taskId,
                 'status' => $request->input('status'),
             ]);
-
         } catch (ValidationException $e) {
             // Invalid status value (422)
             return response()->json([
@@ -740,7 +756,6 @@ class TaskController extends Controller
             return response()->json([
                 'message' => 'Task deleted successfully',
             ]);
-
         } catch (InvalidArgumentException $e) {
             // Invalid task ID (400)
             return response()->json(['error' => $e->getMessage()], 400);
@@ -805,10 +820,9 @@ class TaskController extends Controller
 
             // Execute restore via repository (no dedicated use case needed for simple restore)
             // $success = $this->taskRepository->restore($taskId);
-            
+
             // For now, return not implemented
             return response()->json(['error' => 'Restore endpoint not implemented'], 501);
-
         } catch (DomainException $e) {
             return response()->json(['error' => $e->getMessage()], 403);
         } catch (RuntimeException $e) {
@@ -837,7 +851,7 @@ class TaskController extends Controller
         if (!$value || trim($value) === '') {
             return null;
         }
-        
+
         return array_map('trim', explode(',', $value));
     }
 
@@ -852,26 +866,10 @@ class TaskController extends Controller
         if ($value === null || $value === '') {
             return null;
         }
-        
+
         $parsed = filter_var($value, FILTER_VALIDATE_INT);
         return $parsed !== false ? $parsed : null;
     }
 
-    /**
-     * Check if a user has admin privileges
-     * 
-     * @param int $userId User ID to check
-     * @return bool True if user is admin, false otherwise
-     * 
-     * @internal Implementation depends on your authentication/authorization system
-     */
-    private function isAdmin(int $userId): bool
-    {
-        // TODO: Implement based on your auth system
-        // Example: Check if user has 'admin' role in vtiger_users or custom roles table
-        // return $this->userRepository->hasRole($userId, 'admin');
-        
-        // Default: no admin users (can be enabled per deployment)
-        return false;
-    }
+    
 }

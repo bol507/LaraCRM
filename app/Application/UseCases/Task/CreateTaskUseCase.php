@@ -4,8 +4,8 @@ namespace App\Application\UseCases\Task;
 
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\DTOs\Task\CreateTaskRequest;
-use App\Application\ValueObjects\TaskStatus;
-use App\Application\ValueObjects\TaskPriority;
+use App\Application\ValueObjects\Task\TaskPriority;
+use App\Application\ValueObjects\Task\TaskStatus;
 use InvalidArgumentException;
 
 class CreateTaskUseCase

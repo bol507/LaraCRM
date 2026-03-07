@@ -486,4 +486,13 @@ interface TaskRepositoryInterface
      * Log::info("Permanently deleted {$deletedCount} old tasks");
      */
     public function deletePermanently(int $olderThanDays): int;
+
+     /**
+     * Calculate statistics for user's tasks
+     * 
+     * @param int $userId User ID to calculate stats for
+     * @param array $filters Optional filters to apply
+     * @return array{total: int, completed: int, pending: int, overdue: int, highPriority: int}
+     */
+    public function calculateStats(int $userId, array $filters = []): array;
 }

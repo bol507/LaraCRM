@@ -37,8 +37,8 @@ class CommentMapper
             is_private: isset($row['is_private']) ? (int) $row['is_private'] : 0,
             filename: $row['filename'] ?? $row['attachment'] ?? null,
             related_email_id: isset($row['related_email_id']) ? (int) $row['related_email_id'] : null,
-            createdtime: $row['createdtime'] ?? $row['createdAt'] ?? null,
-            modifiedtime: $row['modifiedtime'] ?? $row['updatedAt'] ?? null,
+            createdtime: $row['createdtime'] ??  null,
+            modifiedtime: $row['modifiedtime'] ??  null,
             assigned_user_name: $row['assigned_user_name'] ?? $row['userName'] ?? null,
             assigned_user_email: $row['assigned_user_email'] ?? $row['userEmail'] ?? null,
         );

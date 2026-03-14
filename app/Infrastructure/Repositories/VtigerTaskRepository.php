@@ -9,6 +9,7 @@ use App\Domain\Entities\Task;
 use App\Infrastructure\Mappers\TaskMapper;
 use Illuminate\Support\Facades\DB;
 use DateTimeImmutable;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -376,6 +377,11 @@ class VtigerTaskRepository implements TaskRepositoryInterface
 
             return $results->map(fn($row) => $this->mapToEntity($row))->toArray();
         } catch (\Exception $e) {
+            Log::error('Error fetching dashboard tasks', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             throw new RuntimeException(
                 "Failed to retrieve all dashboard tasks for user {$userId}: " . $e->getMessage(),
                 previous: $e
@@ -1180,7 +1186,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->where('vtiger_activity.activitytype', 'Task')
             ->where(function ($q) use ($userId) {
                 $q->where('vtiger_crmentity.smownerid', $userId)
-                  ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+                    ->orWhere('vtiger_crmentity.smcreatorid', $userId);
             });
 
         $this->applyFilters($baseQuery, $filters);

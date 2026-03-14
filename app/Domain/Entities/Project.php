@@ -27,6 +27,7 @@ class Project
         public ?int $hits,
         public ?string $description,
         public ?string $createdtime,
-        public ?string $modifiedtime
+        public ?string $modifiedtime,
+        public readonly ?string $lastActivity = null  // calculated in PHP
     ) {}
 }

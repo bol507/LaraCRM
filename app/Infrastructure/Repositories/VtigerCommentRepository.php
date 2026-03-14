@@ -61,6 +61,27 @@ class VtigerCommentRepository implements CommentRepositoryInterface
      * @throws \InvalidArgumentException If relatedId is not positive
      * @throws \RuntimeException If database query fails
      */
+    /**
+     * {@inheritDoc}
+     * 
+     * Retrieves a paginated list of comments associated with a specific
+     * record (e.g., project, quote, task), ordered by creation date
+     * with most recent comments first.
+     * 
+     * This method performs a JOIN across vtiger_modcomments, vtiger_crmentity,
+     * and vtiger_users tables to fetch complete comment data including
+     * author information.
+     * 
+     * @param int $relatedId ID of the related record (e.g., project ID)
+     * @param string $module Module type (e.g., 'Project', 'Quotes', 'Calendar')
+     * @param int $page Current page number (1-based, default: 1)
+     * @param int $perPage Number of items per page (default: 50)
+     * 
+     * @return LengthAwarePaginator<Comment> Paginated collection of Comment entities
+     * 
+     * @throws \InvalidArgumentException If relatedId is not positive
+     * @throws \RuntimeException If database query fails
+     */
     public function getByRelatedId(
         int $relatedId,
         string $module,
@@ -106,12 +127,13 @@ class VtigerCommentRepository implements CommentRepositoryInterface
                 'vtiger_modcomments.is_private',
                 'vtiger_modcomments.filename',
                 'vtiger_modcomments.related_email_id',
-                'vtiger_modcomments.createdtime',
-                'vtiger_modcomments.modifiedtime',
+                'vtiger_crmentity.createdtime',      // date created
+                'vtiger_crmentity.modifiedtime',     //date modified
                 DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
                 DB::raw('vtiger_users.email1 as assigned_user_email')
             )
-            ->orderBy('vtiger_modcomments.createdtime', 'ASC')
+            
+            ->orderBy('vtiger_crmentity.createdtime', 'DESC')
             ->offset($offset)
             ->limit($perPage)
             ->get();
@@ -166,8 +188,8 @@ class VtigerCommentRepository implements CommentRepositoryInterface
                 'vtiger_modcomments.is_private',
                 'vtiger_modcomments.filename',
                 'vtiger_modcomments.related_email_id',
-                'vtiger_modcomments.createdtime',
-                'vtiger_modcomments.modifiedtime',
+                 'vtiger_crmentity.createdtime',
+                'vtiger_crmentity.modifiedtime',
                 DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
                 DB::raw('vtiger_users.email1 as assigned_user_email')
             )
@@ -311,7 +333,7 @@ class VtigerCommentRepository implements CommentRepositoryInterface
 
         // Define whitelist of updatable fields
         $updatable = ['commentcontent', 'reasontoedit', 'is_private'];
-        
+
         // Filter input data to only include allowed fields
         $updates = array_filter(
             $data,
@@ -462,7 +484,7 @@ class VtigerCommentRepository implements CommentRepositoryInterface
             ->table('vtiger_users')
             ->where('id', $userId)
             ->value('role');
-        
+
         return $role === 'Admin';
     }
 }

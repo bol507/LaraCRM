@@ -26,7 +26,7 @@ use RuntimeException;
 class VtigerUserRepository implements UserRepositoryInterface
 {
 
-    
+
 
     /**
      * {@inheritDoc}
@@ -36,47 +36,47 @@ class VtigerUserRepository implements UserRepositoryInterface
      * Uses manual pagination for compatibility with Vtiger schema.
      */
     public function getAll(int $page, int $perPage, ?string $search): LengthAwarePaginator
-{
-    $query = DB::connection('vtiger')
-        ->table('vtiger_users')
-        ->select(
-            'vtiger_users.id',
-            'vtiger_users.user_name',
-            'vtiger_users.first_name',
-            'vtiger_users.last_name',
-            'vtiger_users.email1 as email1',
-            'vtiger_users.is_admin',
-            'vtiger_users.status',
-            'vtiger_users.phone_crm_extension as phone_crm_extension',
-            'vtiger_users.department',
-            'vtiger_users.reports_to_id',
-            // ✅ Same fix: subquery for rolename
-            DB::raw('(
+    {
+        $query = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->select(
+                'vtiger_users.id',
+                'vtiger_users.user_name',
+                'vtiger_users.first_name',
+                'vtiger_users.last_name',
+                'vtiger_users.email1 as email1',
+                'vtiger_users.is_admin',
+                'vtiger_users.status',
+                'vtiger_users.phone_crm_extension as phone_crm_extension',
+                'vtiger_users.department',
+                'vtiger_users.reports_to_id',
+                // ✅ Same fix: subquery for rolename
+                DB::raw('(
                 SELECT vtiger_role.rolename 
                 FROM vtiger_user2role 
                 INNER JOIN vtiger_role ON vtiger_user2role.roleid = vtiger_role.roleid 
                 WHERE vtiger_user2role.userid = vtiger_users.id 
                 LIMIT 1
             ) as rolename')
-        )
-        ->where('vtiger_users.deleted', 0);
+            )
+            ->where('vtiger_users.deleted', 0);
 
-    // ✅ Búsqueda
-    if ($search) {
-        $query->where(function ($q) use ($search) {
-            $q->where('vtiger_users.first_name', 'LIKE', "%{$search}%")
-              ->orWhere('vtiger_users.last_name', 'LIKE', "%{$search}%")
-              ->orWhere('vtiger_users.user_name', 'LIKE', "%{$search}%")
-              ->orWhere('vtiger_users.email1', 'LIKE', "%{$search}%");
+        // ✅ Búsqueda
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('vtiger_users.first_name', 'LIKE', "%{$search}%")
+                    ->orWhere('vtiger_users.last_name', 'LIKE', "%{$search}%")
+                    ->orWhere('vtiger_users.user_name', 'LIKE', "%{$search}%")
+                    ->orWhere('vtiger_users.email1', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+
+        return $paginator->through(function ($row) {
+            return UserMapper::fromDatabaseRow($row);
         });
     }
-
-    $paginator = $query->paginate($perPage, ['*'], 'page', $page);
-
-    return $paginator->through(function ($row) {
-        return UserMapper::fromDatabaseRow($row);
-    });
-}
 
     /**
      * {@inheritDoc}
@@ -85,55 +85,54 @@ class VtigerUserRepository implements UserRepositoryInterface
      * Returns null if user not found or marked as deleted.
      */
     public function findById(int $id): ?User
-{
-    try {
-        // ✅ CORRECCIÓN: Tu tabla vtiger_users NO tiene roleid
-        // Usar subconsulta para obtener rol desde vtiger_user2role
-        $row = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->select(
-                'vtiger_users.id',
-                'vtiger_users.user_name',
-                'vtiger_users.first_name',
-                'vtiger_users.last_name',
-                'vtiger_users.email1',
-                'vtiger_users.is_admin',
-                'vtiger_users.status',
-                'vtiger_users.phone_crm_extension as phone_crm_extension',
-                'vtiger_users.department',
-                'vtiger_users.reports_to_id',
-                // ✅ Obtener rolename desde vtiger_user2role + vtiger_role (tabla intermedia)
-                DB::raw('(
+    {
+        try {
+            // ✅ CORRECCIÓN: Tu tabla vtiger_users NO tiene roleid
+            // Usar subconsulta para obtener rol desde vtiger_user2role
+            $row = DB::connection('vtiger')
+                ->table('vtiger_users')
+                ->select(
+                    'vtiger_users.id',
+                    'vtiger_users.user_name',
+                    'vtiger_users.first_name',
+                    'vtiger_users.last_name',
+                    'vtiger_users.email1',
+                    'vtiger_users.is_admin',
+                    'vtiger_users.status',
+                    'vtiger_users.phone_crm_extension as phone_crm_extension',
+                    'vtiger_users.department',
+                    'vtiger_users.reports_to_id',
+                    // ✅ Obtener rolename desde vtiger_user2role + vtiger_role (tabla intermedia)
+                    DB::raw('(
                     SELECT vtiger_role.rolename 
                     FROM vtiger_user2role 
                     INNER JOIN vtiger_role ON vtiger_user2role.roleid = vtiger_role.roleid 
                     WHERE vtiger_user2role.userid = vtiger_users.id 
                     LIMIT 1
                 ) as rolename')
-            )
-            ->where('vtiger_users.id', $id)
-            ->where('vtiger_users.deleted', 0)
-            ->first();
+                )
+                ->where('vtiger_users.id', $id)
+                ->where('vtiger_users.deleted', 0)
+                ->first();
 
-        if (!$row) {
-            return null;
+            if (!$row) {
+                return null;
+            }
+
+
+            return UserMapper::fromDatabaseRow($row);
+        } catch (\Exception $e) {
+            Log::error('Error al obtener usuario por ID: ' . $e->getMessage(), [
+                'user_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            throw new RuntimeException(
+                "Failed to retrieve user {$id}: " . $e->getMessage(),
+                previous: $e
+            );
         }
-
-               
-        return UserMapper::fromDatabaseRow($row);
-
-    } catch (\Exception $e) {
-        Log::error('Error al obtener usuario por ID: ' . $e->getMessage(), [
-            'user_id' => $id,
-            'trace' => $e->getTraceAsString()
-        ]);
-        
-        throw new RuntimeException(
-            "Failed to retrieve user {$id}: " . $e->getMessage(),
-            previous: $e
-        );
     }
-}
     /**
      * {@inheritDoc}
      * 
@@ -436,7 +435,7 @@ class VtigerUserRepository implements UserRepositoryInterface
             ->update([
                 'user_password' => $hashedPassword,
                 'confirm_password' => $hashedPassword,
-                'crypt_type' => 'PHASH',  
+                'crypt_type' => 'PHASH',
                 'date_modified' => now()->format('Y-m-d H:i:s'),
                 'modified_user_id' => $modifiedByUserId,
             ]);
@@ -495,45 +494,44 @@ class VtigerUserRepository implements UserRepositoryInterface
      * Returns array format for lightweight frontend consumption.
      */
     public function findByNameOrUsername(string $searchTerm): array
-{
-    $users = DB::connection('vtiger')
-        ->table('vtiger_users')
-        ->select(
-            'vtiger_users.id',
-            'vtiger_users.user_name',
-            'vtiger_users.first_name',
-            'vtiger_users.last_name',
-            'vtiger_users.email1 as email1',
-            'vtiger_users.is_admin',
-            'vtiger_users.status',
-            'vtiger_users.phone_crm_extension as phone_crm_extension',
-            'vtiger_users.department',
-            'vtiger_users.reports_to_id',
-            // ✅ Same fix: subquery for rolename
-            DB::raw('(
+    {
+        $users = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->select(
+                'vtiger_users.id',
+                'vtiger_users.user_name',
+                'vtiger_users.first_name',
+                'vtiger_users.last_name',
+                'vtiger_users.email1 as email1',
+                'vtiger_users.is_admin',
+                'vtiger_users.status',
+                'vtiger_users.phone_crm_extension as phone_crm_extension',
+                'vtiger_users.department',
+                'vtiger_users.reports_to_id',
+                DB::raw('(
                 SELECT vtiger_role.rolename 
                 FROM vtiger_user2role 
                 INNER JOIN vtiger_role ON vtiger_user2role.roleid = vtiger_role.roleid 
                 WHERE vtiger_user2role.userid = vtiger_users.id 
                 LIMIT 1
             ) as rolename')
-        )
-        ->where('vtiger_users.deleted', 0)
-        ->where(function ($q) use ($searchTerm) {
-            $q->where('vtiger_users.first_name', 'LIKE', "%{$searchTerm}%")
-              ->orWhere('vtiger_users.last_name', 'LIKE', "%{$searchTerm}%")
-              ->orWhere('vtiger_users.user_name', 'LIKE', "%{$searchTerm}%")
-              ->orWhere('vtiger_users.email1', 'LIKE', "%{$searchTerm}%");
-        })
-        ->limit(10)
-        ->get();
+            )
+            ->where('vtiger_users.deleted', 0)
+            ->where(function ($q) use ($searchTerm) {
+                $q->where('vtiger_users.first_name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('vtiger_users.last_name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('vtiger_users.user_name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('vtiger_users.email1', 'LIKE', "%{$searchTerm}%");
+            })
+            ->limit(10)
+            ->get();
 
-    return $users->map(function ($row) {
-        return UserMapper::fromDatabaseRow($row);
-    })->toArray();
-}
+        return $users->map(function ($row) {
+            return UserMapper::fromDatabaseRow($row);
+        })->toArray();
+    }
 
-     /**
+    /**
      * {@inheritDoc}
      * 
      * Vtiger-specific: Queries email1 field (case-insensitive via LOWER).
@@ -724,7 +722,6 @@ class VtigerUserRepository implements UserRepositoryInterface
         try {
             $user = $this->findById($userId);
             return $user ? $user->isAdmin() : false;
-
         } catch (\Exception $e) {
             Log::error("Error checking admin status for user {$userId}: " . $e->getMessage());
             return false;
@@ -751,7 +748,6 @@ class VtigerUserRepository implements UserRepositoryInterface
 
             // ✅ Usar mapper para cada fila
             return $rows->map(fn($row) => UserMapper::fromDatabaseRow($row))->toArray();
-
         } catch (\Exception $e) {
             throw new RuntimeException(
                 "Failed to retrieve active users: " . $e->getMessage(),
@@ -759,6 +755,4 @@ class VtigerUserRepository implements UserRepositoryInterface
             );
         }
     }
-
-   
 }

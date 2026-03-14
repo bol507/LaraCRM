@@ -10,6 +10,7 @@ use App\Application\UseCases\Task\UpdateTaskStatusUseCase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class DashboardController extends Controller
 {
@@ -50,6 +51,10 @@ class DashboardController extends Controller
                 'stats' => $result['stats'],
             ]);
         } catch (\Exception $e) {
+            Log::error('Dashboard tasks error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'error' => 'Error fetching dashboard tasks: ' . $e->getMessage()
             ], 500);
@@ -97,6 +102,11 @@ class DashboardController extends Controller
 
             return response()->json($metrics);
         } catch (\Exception $e) {
+            
+            Log::error('Dashboard metrics error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'error' => 'Error fetching metrics: ' . $e->getMessage()
             ], 500);

@@ -404,6 +404,7 @@ class User
     {
         return [
             'id' => $this->id,
+            'user_id' => $this->id,
             'user_name' => $this->userName,
             'first_name' => $this->firstName,
             'last_name' => $this->lastName,

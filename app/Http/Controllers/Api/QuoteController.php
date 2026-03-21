@@ -7,10 +7,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
 use App\Application\UseCases\CreateQuoteUseCase;
 use App\Application\UseCases\UpdateQuoteUseCase;
-use App\Application\UseCases\GetQuoteUseCase;
+use App\Application\UseCases\Quote\GetQuoteUseCase;
 use App\Application\UseCases\DeleteQuoteUseCase;
 use App\Application\DTOs\CreateQuoteRequest;
 use App\Application\DTOs\UpdateQuoteRequest;
+use App\Application\UseCases\Quote\GetAllQuotesUseCase;
 use App\Http\Controllers\Controller;
 
 /**
@@ -55,6 +56,7 @@ class QuoteController extends Controller
      * @param DeleteQuoteUseCase $deleteQuoteUseCase Use case for deleting quotes
      */
     public function __construct(
+        private readonly GetAllQuotesUseCase $getAllQuoteUseCase,
         private readonly CreateQuoteUseCase $createQuoteUseCase,
         private readonly UpdateQuoteUseCase $updateQuoteUseCase,
         private readonly GetQuoteUseCase $getQuoteUseCase,
@@ -107,8 +109,10 @@ class QuoteController extends Controller
         $perPage = (int) $request->get('per_page', 20);
         $search = $request->get('search');
 
+        $accountId = $request->get('account_id') ? (int) $request->get('account_id') : null;
+
         // Execute use case with validated parameters
-        $paginator = $this->getQuoteUseCase->execute($page, $perPage, $search);
+        $paginator = $this->getAllQuoteUseCase->execute($page, $perPage, $search, $accountId);
 
         // Extract items from paginator for response
         $data = $paginator->items();
@@ -221,7 +225,7 @@ class QuoteController extends Controller
 
         try {
             // Execute use case to create quote
-            $quoteId = $this->createQuoteUseCase->execute($createRequest, $authenticatedUser->id);
+            $quoteId = $this->createQuoteUseCase->execute($createRequest, $authenticatedUser->getId());
             
             // Fetch created quote to return quote number
             $quote = $this->getQuoteUseCase->executeById($quoteId);
@@ -382,7 +386,7 @@ class QuoteController extends Controller
 
         try {
             // Execute use case to update quote
-            $success = $this->updateQuoteUseCase->execute($updateRequest, $authenticatedUser->id);
+            $success = $this->updateQuoteUseCase->execute($updateRequest, $authenticatedUser->getId());
             
             if ($success) {
                 return response()->json(['message' => 'Quote updated successfully']);
@@ -433,7 +437,7 @@ class QuoteController extends Controller
 
         try {
             // Execute use case to delete quote
-            $success = $this->deleteQuoteUseCase->execute($id, $authenticatedUser->id);
+            $success = $this->deleteQuoteUseCase->execute($id, $authenticatedUser->getId());
             
             if ($success) {
                 return response()->json(['message' => 'Quote deleted successfully']);

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Application\UseCases\GetQuoteUseCase;
+use App\Application\UseCases\Quote\GetQuoteUseCase;
 use App\Application\UseCases\GetGeneralConditionsUseCase;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;

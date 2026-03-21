@@ -19,10 +19,11 @@ class GetAllProjectsUseCase
      * @param int $limit
      * @param string|null $searchTerm
      * @param string|null $status Filter by status
+     * @param int|null $accountId Filter by account ID
      * @return LengthAwarePaginator
      */
-    public function execute(int $page, int $limit, ?string $searchTerm,  ?string $status = null): LengthAwarePaginator
+    public function execute(int $page, int $limit, ?string $searchTerm,  ?string $status = null, ?int $accountId = null): LengthAwarePaginator
     {
-        return $this->repository->getAll($page, $limit, $searchTerm, $status);
+        return $this->repository->getAll($page, $limit, $searchTerm, $status, $accountId);
     }
 }

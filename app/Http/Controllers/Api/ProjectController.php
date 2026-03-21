@@ -10,6 +10,7 @@ use App\Application\UseCases\Project\DeleteProjectUseCase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Project API Controller
@@ -139,9 +140,11 @@ class ProjectController extends Controller
             $limit = $request->get('limit', 10);
             $search = $request->get('search', null);
             $status = $request->get('status', null);
-
+            //  Extract account_id parameter
+            $accountId = $request->get('account_id') ? (int) $request->get('account_id') : null;
+            
             //  Execute use case with validated parameters
-            $projects = $this->getAllProjectsUseCase->execute($page, $limit, $search, $status);
+            $projects = $this->getAllProjectsUseCase->execute($page, $limit, $search, $status, $accountId);
 
             return response()->json([
                 'data' => $projects->items(),

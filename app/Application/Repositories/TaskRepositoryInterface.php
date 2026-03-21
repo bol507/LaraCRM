@@ -9,7 +9,7 @@ use App\Domain\Entities\Task;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 /**
- * Task Repository Interface
+ * Interface TaskRepositoryInterface
  * 
  * Defines the contract for task persistence operations in Vtiger CRM.
  * 
@@ -33,12 +33,12 @@ use Illuminate\Pagination\LengthAwarePaginator;
  * - Respect user permissions and data visibility rules
  * 
  * @package App\Application\Repositories
- * @author Bolivar Delgado <bolivar.delgado@gmail.com>
+ * @author Bolivar Delgado <bolivar.delagado@gmail.com>
  * @since 1.0.0
  * 
  * @see \App\Domain\Entities\Task
- * @see \App\Application\DTOs\CreateTaskRequest
- * @see \App\Application\DTOs\UpdateTaskRequest
+ * @see \App\Application\DTOs\Task\CreateTaskRequest
+ * @see \App\Application\DTOs\Task\UpdateTaskRequest
  * @see \App\Infrastructure\Repositories\VtigerTaskRepository
  * @see \App\Application\UseCases\Task\CreateTaskUseCase
  * @see \App\Application\UseCases\Task\UpdateTaskUseCase
@@ -487,12 +487,96 @@ interface TaskRepositoryInterface
      */
     public function deletePermanently(int $olderThanDays): int;
 
-     /**
+    /**
      * Calculate statistics for user's tasks
      * 
+     * Returns aggregated statistics about a user's tasks for dashboard widgets
+     * and reporting. Includes counts by status, priority, and overdue state.
+     * This method supports optional filters for more granular statistics.
+     * 
      * @param int $userId User ID to calculate stats for
-     * @param array $filters Optional filters to apply
-     * @return array{total: int, completed: int, pending: int, overdue: int, highPriority: int}
+     * @param array<string, mixed> $filters Optional filters to apply (same as findByUserId)
+     *        - status: string|array|null - Filter by status
+     *        - priority: string|array|null - Filter by priority
+     *        - dateFrom: string|null - Filter tasks with due_date >= this date
+     *        - dateTo: string|null - Filter tasks with due_date <= this date
+     * 
+     * @return array{
+     *     total: int,           // Total number of tasks matching filters
+     *     completed: int,       // Tasks with status = 'Completed'
+     *     pending: int,         // Tasks not completed
+     *     overdue: int,         // Pending tasks with due_date < today
+     *     highPriority: int     // Pending tasks with priority = 'High'
+     * }
+     * 
+     * @throws \RuntimeException If database query fails
+     * @throws \InvalidArgumentException If userId is invalid (<= 0)
+     * 
+     * @example
+     * // Get statistics for dashboard with filters
+     * $stats = $repository->calculateStats(123, ['priority' => 'High']);
+     * // Returns: ['total' => 15, 'completed' => 5, 'pending' => 10, 'overdue' => 3, 'highPriority' => 8]
+     * 
+     * @example
+     * // Get overdue task count only
+     * $stats = $repository->calculateStats(123, ['dateTo' => date('Y-m-d')]);
+     * echo "Overdue tasks: {$stats['overdue']}";
+     * 
+     * @see getStatistics() For the non-filtered version of this method
      */
     public function calculateStats(int $userId, array $filters = []): array;
+
+    /**
+     * Perform a global search for tasks with ranking and limits
+     * 
+     * This method provides advanced search functionality with relevance ranking,
+     * result limiting, and matching across multiple task fields. It is designed
+     * for global search features that aggregate results from multiple entity types.
+     * 
+     * The search supports partial matching and returns results ordered by relevance.
+     * Each result includes a type identifier for frontend routing and display purposes.
+     * 
+     * @param string $query The search query string. Supports partial matching across
+     *                      subject, description, location, and related record names.
+     * @param int $limit The maximum number of results to return.
+     * 
+     * @return array<int, array<string, mixed>> An array of associative arrays
+     *                                          containing task information with
+     *                                          a 'type' field set to 'task' for
+     *                                          frontend identification.
+     * 
+     * @throws \InvalidArgumentException If the query is empty or limit is invalid
+     *                                   (e.g., negative or zero).
+     * @throws \RuntimeException If the database query fails or connection is lost.
+     * 
+     * @example
+     * // Global search with limit
+     * $results = $repository->search('client proposal', 5);
+     * 
+     * @example
+     * // Format for global search response
+     * return [
+     *     'tasks' => $results,
+     *     'total' => count($results)
+     * ];
+     * 
+     * @example
+     * // Response structure
+     * // Returns: [
+     * //     ['id' => 456, 'subject' => 'Call client about proposal', 'type' => 'task', ...],
+     * //     ...
+     * // ]
+     * 
+     * @example
+     * // Use in global search bar
+     * const searchTasks = async (query) => {
+     *     const response = await api.get(`/search?query=${query}&limit=10`);
+     *     displayResults(response.data.tasks);
+     * };
+     * 
+     * @see \App\Application\UseCases\GlobalSearchUseCase For the use case that
+     *                                                    aggregates results from
+     *                                                    multiple repositories
+     */
+    public function search(string $query, int $limit): array;
 }

@@ -29,13 +29,22 @@ class JwtService
      * @return string Encoded JWT token
      * @throws \Exception If token generation fails
      */
-    public function generateToken(int $userId): string  
+    public function generateToken(int $userId): string
     {
+        // Validate user ID
+        if ($userId <= 0) {
+            throw new \InvalidArgumentException('Invalid user ID for token generation');
+        }
+
+        $issuedAt = time();
+        $ttl = (int) config('jwt.ttl', 10080); // Minutes (default: 7 days)
+        $expiration = $issuedAt + ($ttl * 60); // Convert to seconds
+
         $payload = [
-            'iss' => config('app.url'),      // Issuer
-            'sub' => $userId,                 // Subject (user ID)
-            'iat' => time(),                  // Issued at
-            'exp' => time() + (60 * 60),      // Expiration (1 hour)
+            'iss' => config('app.url'),
+            'sub' => $userId,
+            'iat' => $issuedAt,
+            'exp' =>  $expiration,
         ];
 
         return JWT::encode($payload, $this->getSecret(), 'HS256');
@@ -51,26 +60,22 @@ class JwtService
      * @throws SignatureInvalidException If token signature is invalid
      * @throws BeforeValidException If token is not yet valid
      */
-    public function validateToken(string $token): ?object 
+    public function validateToken(string $token): ?object
     {
         try {
             $decoded = JWT::decode($token, new Key($this->getSecret(), 'HS256'));
-            
-            
+
+
             return $decoded;
-            
         } catch (ExpiredException $e) {
             Log::warning('JWT token expired', ['error' => $e->getMessage()]);
             return null;
-            
         } catch (SignatureInvalidException $e) {
             Log::warning('JWT token signature invalid', ['error' => $e->getMessage()]);
             return null;
-            
         } catch (BeforeValidException $e) {
             Log::warning('JWT token not yet valid', ['error' => $e->getMessage()]);
             return null;
-            
         } catch (\Exception $e) {
             Log::error('JWT token validation failed', ['error' => $e->getMessage()]);
             return null;
@@ -100,11 +105,11 @@ class JwtService
     public function refreshToken(string $token): ?string
     {
         $decoded = $this->validateToken($token);
-        
+
         if (!$decoded || !isset($decoded->sub)) {
             return null;
         }
-        
+
         // Generate new token with same user ID
         return $this->generateToken($decoded->sub);
     }
@@ -134,6 +139,11 @@ class JwtService
      */
     private function getSecret(): string
     {
-        return env('JWT_SECRET', config('app.key', 'your-default-secret-key-change-in-production'));
+       $secret = config('jwt.secret');
+        if (empty($secret)) {
+            throw new \RuntimeException('JWT secret key is not configured');
+        }
+
+        return $secret;
     }
 }

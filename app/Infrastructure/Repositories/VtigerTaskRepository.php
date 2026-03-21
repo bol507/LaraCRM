@@ -1205,4 +1205,37 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                 ->count(),
         ];
     }
+
+    public function search(string $query, int $limit): array
+    {
+        return DB::connection('vtiger')
+            ->table('vtiger_activity')
+            ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
+            ->where('vtiger_crmentity.deleted', 0)
+            ->where('vtiger_activity.activitytype', 'Task')
+            ->where(function($q) use ($query) {
+                $q->where('vtiger_activity.subject', 'LIKE', "%{$query}%")
+                  ->orWhere('vtiger_crmentity.description', 'LIKE', "%{$query}%");
+            })
+            ->select(
+                'vtiger_activity.activityid as id',
+                'vtiger_activity.subject as title',
+                'vtiger_crmentity.description as description',
+                'vtiger_activity.date_start as due_date',
+                'vtiger_activity.status as status',
+                DB::raw("'task' as type")
+            )
+            ->limit($limit)
+            ->get()
+            ->map(fn($item) => [
+                'id' => $item->id,
+                'type' => $item->type,
+                'title' => $item->title,
+                'description' => $item->description ? substr($item->description, 0, 100) : null,
+                'due_date' => $item->due_date,
+                'status' => $item->status,
+                'url' => "/dashboard/tasks/{$item->id}",
+            ])
+            ->toArray();
+    }
 }

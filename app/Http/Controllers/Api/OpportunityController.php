@@ -3,16 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Application\UseCases\GetAllOpportunitiesUseCase;
 use App\Application\UseCases\CreateOpportunityUseCase;
 use App\Application\DTOs\CreateOpportunityRequest;
 use App\Application\DTOs\OpportunityDto;
 use App\Application\DTOs\UpdateOpportunityRequest;
 use App\Application\UseCases\DeleteOpportunityUseCase;
+use App\Application\UseCases\Opportunity\GetAllOpportunitiesUseCase;
+use App\Application\UseCases\Opportunity\GetOpportunityUseCase;
 use App\Application\UseCases\UpdateOpportunityUseCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -54,6 +56,7 @@ class OpportunityController extends Controller
      */
     public function __construct(
         private readonly GetAllOpportunitiesUseCase $getAllOpportunitiesUseCase,
+        private readonly GetOpportunityUseCase $getOpportunityUseCase,
         private readonly CreateOpportunityUseCase $createOpportunityUseCase,
         private readonly UpdateOpportunityUseCase $updateOpportunityUseCase,
         private readonly DeleteOpportunityUseCase $deleteOpportunityUseCase
@@ -103,8 +106,16 @@ class OpportunityController extends Controller
         $perPage = (int) $request->get('per_page', 20);
         $search = $request->get('search');
 
+        $accountId = $request->get('account_id') ? (int) $request->get('account_id') : null;
+
+        Log::info('🔍 Opportunities request', [
+            'page' => $page,
+            'per_page' => $perPage,
+            'search' => $search,
+            'account_id' => $accountId,  
+        ]);
         //  Execute use case with validated parameters
-        $paginator = $this->getAllOpportunitiesUseCase->execute($page, $perPage, $search);
+        $paginator = $this->getAllOpportunitiesUseCase->execute($page, $perPage, $search, $accountId);
 
         //  Transform Opportunity entities to DTOs for API response
         $data = array_map(function ($opportunity) {
@@ -126,6 +137,22 @@ class OpportunityController extends Controller
                 'next' => $paginator->nextPageUrl(),
             ]
         ]);
+    }
+
+    /**
+     * Get a single opportunity by ID
+     * 
+     * GET /api/opportunities/{id}
+     */
+    public function show(int $id): JsonResponse
+    {
+        $opportunity = $this->getOpportunityUseCase->execute($id);
+
+        if (!$opportunity) {
+            return response()->json(['error' => 'Opportunity not found'], 404);
+        }
+
+        return response()->json(OpportunityDto::fromEntity($opportunity));
     }
 
     /**

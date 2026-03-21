@@ -6,6 +6,7 @@ use App\Application\Repositories\AttachmentRepositoryInterface;
 use Illuminate\Support\ServiceProvider;
 use App\Application\Repositories\ClientRepositoryInterface;
 use App\Application\Repositories\CommentRepositoryInterface;
+use App\Application\Repositories\ContactRepositoryInterface;
 use App\Application\Repositories\DashboardRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
@@ -16,11 +17,12 @@ use App\Application\Repositories\UserRepositoryInterface;
 use App\Infrastructure\Repositories\VtigerAttachmentRepository;
 use App\Infrastructure\Repositories\VtigerClientRepository;
 use App\Infrastructure\Repositories\VtigerCommentRepository;
+use App\Infrastructure\Repositories\VtigerContactRepository;
 use App\Infrastructure\Repositories\VtigerDashboardRepository;
 use App\Infrastructure\Repositories\VtigerGeneralConditionsRepository;
 use App\Infrastructure\Repositories\VtigerOpportunityRepository;
 use App\Infrastructure\Repositories\VtigerProjectRepository;
-use App\Infrastructure\Repositories\VtigerQuoteRepository as RepositoriesVtigerQuoteRepository;
+use App\Infrastructure\Repositories\VtigerQuoteRepository;
 use App\Infrastructure\Repositories\VtigerTaskRepository;
 use App\Infrastructure\Repositories\VtigerUserRepository;
 
@@ -62,7 +64,7 @@ class AppServiceProvider extends ServiceProvider
         // Quotes
         $this->app->bind(
             QuoteRepositoryInterface::class,
-            RepositoriesVtigerQuoteRepository::class
+            VtigerQuoteRepository::class
         );
         // General conditions
         $this->app->bind(
@@ -94,5 +96,11 @@ class AppServiceProvider extends ServiceProvider
             DashboardRepositoryInterface::class,
             VtigerDashboardRepository::class
         );
+        // Contacts
+        $this->app->bind(
+            ContactRepositoryInterface::class,
+            VtigerContactRepository::class
+        );
+
     }
 }

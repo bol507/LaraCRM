@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Application\Repositories\ActivityLogRepositoryInterface;
 use App\Application\Repositories\AttachmentRepositoryInterface;
 use Illuminate\Support\ServiceProvider;
 use App\Application\Repositories\ClientRepositoryInterface;
@@ -14,6 +15,7 @@ use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
+use App\Infrastructure\Repositories\VtigerActivityLogRepository;
 use App\Infrastructure\Repositories\VtigerAttachmentRepository;
 use App\Infrastructure\Repositories\VtigerClientRepository;
 use App\Infrastructure\Repositories\VtigerCommentRepository;
@@ -100,6 +102,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             ContactRepositoryInterface::class,
             VtigerContactRepository::class
+        );
+        // Activities
+        $this->app->bind(
+            ActivityLogRepositoryInterface::class,
+            VtigerActivityLogRepository::class
         );
 
     }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\CommentController;
@@ -149,5 +150,9 @@ Route::middleware('jwt')->group(function () {
         Route::put('/{id}', [ContactController::class, 'update']);
         Route::delete('/{id}', [ContactController::class, 'destroy']);
         Route::get('/{accountId}/contacts', [ContactController::class, 'byAccount']);
+    });
+
+    Route::prefix('activity')->group(function () {
+         Route::get('/activity', [ActivityLogController::class, 'index']);
     });
 });

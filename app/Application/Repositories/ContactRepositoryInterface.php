@@ -18,13 +18,12 @@ interface ContactRepositoryInterface
     public function create(array $contactData, int $createdByUserId): int; 
     
     /**
-     * ✅ Obtener contacto por ID
+     * Get contact by ID
      * 
-     * @param int $id ID del contacto
-     * @return Contact|null Contacto encontrado o null si no existe
+     * @param int $id Contact ID
+     * @return Contact|null Contact found or null if not exists
      */
     public function findById(int $id): ?Contact;
-
     
     /**
      * List contacts with pagination and filters

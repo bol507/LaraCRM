@@ -115,6 +115,7 @@ class TaskMapper
                 'smownerid' => $task->getAssignedUserId(),
                 'modifiedby' => $task->getAssignedUserId(),
                 'setype' => 'Calendar',
+                'label' => $task->getSubject(),
                 'description' => $task->getDescription(),
                 'createdtime' => $task->getCreatedAt()->format('Y-m-d H:i:s'),
                 'modifiedtime' => $task->getUpdatedAt()->format('Y-m-d H:i:s'),

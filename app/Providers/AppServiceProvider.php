@@ -27,6 +27,7 @@ use App\Infrastructure\Repositories\VtigerProjectRepository;
 use App\Infrastructure\Repositories\VtigerQuoteRepository;
 use App\Infrastructure\Repositories\VtigerTaskRepository;
 use App\Infrastructure\Repositories\VtigerUserRepository;
+use App\Services\JwtService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -35,7 +36,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+         $this->app->singleton(JwtService::class, function ($app) {
+            return new JwtService();
+        });
         $this->registerRepositories();
+        
+       
     }
 
     /**

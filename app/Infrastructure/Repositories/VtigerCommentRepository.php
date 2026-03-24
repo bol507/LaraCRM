@@ -129,6 +129,7 @@ class VtigerCommentRepository implements CommentRepositoryInterface
                 'vtiger_modcomments.related_email_id',
                 'vtiger_crmentity.createdtime',      // date created
                 'vtiger_crmentity.modifiedtime',     //date modified
+                'vtiger_crmentity.label',
                 DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
                 DB::raw('vtiger_users.email1 as assigned_user_email')
             )
@@ -190,6 +191,7 @@ class VtigerCommentRepository implements CommentRepositoryInterface
                 'vtiger_modcomments.related_email_id',
                  'vtiger_crmentity.createdtime',
                 'vtiger_crmentity.modifiedtime',
+                'vtiger_crmentity.label',
                 DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
                 DB::raw('vtiger_users.email1 as assigned_user_email')
             )
@@ -254,6 +256,7 @@ class VtigerCommentRepository implements CommentRepositoryInterface
                 'smownerid' => $authenticatedUserId,
                 'setype' => 'ModComments',
                 'description' => Str::limit($content, 100),
+                'label' => Str::limit(trim($content), 100, '...'),
                 'createdtime' => $now,
                 'modifiedtime' => $now,
                 'deleted' => 0,
@@ -262,11 +265,11 @@ class VtigerCommentRepository implements CommentRepositoryInterface
             // Step 3: Insert into vtiger_modcomments (comment-specific table)
             DB::connection('vtiger')->table('vtiger_modcomments')->insert([
                 'modcommentsid' => $commentId,
-                'related_to' => $relatedId,
                 'commentcontent' => $content,
-                'userid' => $authenticatedUserId,
+                'related_to' => $relatedId,
                 'parent_comments' => $parentId,
                 'customer' => null,
+                'userid' => $authenticatedUserId,
                 'reasontoedit' => null,
                 'is_private' => $isPrivate ? 1 : 0,
                 'filename' => null,

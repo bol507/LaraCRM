@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
-use App\Application\UseCases\CreateQuoteUseCase;
-use App\Application\UseCases\UpdateQuoteUseCase;
+use App\Application\UseCases\Quote\CreateQuoteUseCase;
+use App\Application\UseCases\Quote\UpdateQuoteUseCase;
 use App\Application\UseCases\Quote\GetQuoteUseCase;
 use App\Application\UseCases\DeleteQuoteUseCase;
 use App\Application\DTOs\CreateQuoteRequest;
@@ -225,15 +225,14 @@ class QuoteController extends Controller
 
         try {
             // Execute use case to create quote
-            $quoteId = $this->createQuoteUseCase->execute($createRequest, $authenticatedUser->getId());
+            $quote = $this->createQuoteUseCase->execute($createRequest, $authenticatedUser->getId());
             
-            // Fetch created quote to return quote number
-            $quote = $this->getQuoteUseCase->executeById($quoteId);
+            
             
             return response()->json([
                 'message' => 'Quote created successfully',
-                'quoteid' => $quoteId,
-                'quoteno' => $quote?->quoteno
+                'quoteid' => $quote->quoteid,
+                'quoteno' => $quote->quoteno
             ], 201);
 
         } catch (\Exception $e) {

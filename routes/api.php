@@ -153,6 +153,6 @@ Route::middleware('jwt')->group(function () {
     });
 
     Route::prefix('activity')->group(function () {
-         Route::get('/activity', [ActivityLogController::class, 'index']);
+         Route::get('/activity-logs', [ActivityLogController::class, 'index']);
     });
 });

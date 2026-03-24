@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Application\UseCases\CreateOpportunityUseCase;
 use App\Application\DTOs\CreateOpportunityRequest;
 use App\Application\DTOs\OpportunityDto;
 use App\Application\DTOs\UpdateOpportunityRequest;
-use App\Application\UseCases\DeleteOpportunityUseCase;
+use App\Application\UseCases\Opportunity\DeleteOpportunityUseCase;
+use App\Application\UseCases\Opportunity\CreateOpportunityUseCase;
 use App\Application\UseCases\Opportunity\GetAllOpportunitiesUseCase;
 use App\Application\UseCases\Opportunity\GetOpportunityUseCase;
-use App\Application\UseCases\UpdateOpportunityUseCase;
+use App\Application\UseCases\Opportunity\UpdateOpportunityUseCase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;

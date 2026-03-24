@@ -73,6 +73,84 @@ class VtigerActivityLogRepository implements ActivityLogRepositoryInterface
     }
 
     /**
+     * Get recent activities with advanced filters
+     */
+    public function getRecentActivitiesWithFilters(
+        int $limit = 50,
+        ?string $entityType = null,
+        ?string $action = null,
+        ?int $userId = null,
+        ?string $dateFrom = null,
+        ?string $dateTo = null,
+        ?string $search = null
+    ): ActivityLogListDTO {
+        $query = $this->queryBase();
+
+        // Filter by entity type
+        if ($entityType) {
+            $moduleMap = [
+                'client' => 'Accounts',
+                'project' => 'Project',
+                'task' => 'ProjectTask',
+                'quote' => 'Quotes',
+                'opportunity' => 'Potentials',
+                'contact' => 'Contacts',
+                'activity' => 'Calendar',
+                'document' => 'Documents',
+                'ticket' => 'HelpDesk',
+                'product' => 'Products',
+            ];
+
+            if (isset($moduleMap[$entityType])) {
+                $query->where('vtiger_modtracker_basic.module', $moduleMap[$entityType]);
+            }
+        }
+
+        // Filter by action
+        if ($action) {
+            $statusMap = [
+                'created' => 0,
+                'updated' => 1,
+                'deleted' => 2,
+                'restored' => 3,
+                'transferred' => 4,
+            ];
+
+            if (isset($statusMap[$action])) {
+                $query->where('vtiger_modtracker_basic.status', $statusMap[$action]);
+            }
+        }
+
+        // Filter by user
+        if ($userId) {
+            $query->where('vtiger_modtracker_basic.whodid', $userId);
+        }
+
+        // Filter by date from
+        if ($dateFrom) {
+            $query->where('vtiger_modtracker_basic.changedon', '>=', $dateFrom);
+        }
+
+        // Filter by date to
+        if ($dateTo) {
+            $query->where('vtiger_modtracker_basic.changedon', '<=', $dateTo);
+        }
+
+        // Search by entity name
+        if ($search) {
+            $query->where('vtiger_crmentity.label', 'LIKE', "%{$search}%");
+        }
+
+        $records = $query->orderBy('vtiger_modtracker_basic.changedon', 'desc')
+            ->limit($limit)
+            ->get();
+
+        $activities = $this->mapToEntities($records);
+
+        return ActivityLogListDTO::fromEntities($activities);
+    }
+
+    /**
      * Base query with common joins.
      */
     private function queryBase(): \Illuminate\Database\Query\Builder

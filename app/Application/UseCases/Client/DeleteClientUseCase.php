@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Application\UseCases;
+namespace App\Application\UseCases\Client;
 
 use App\Application\Repositories\ClientRepositoryInterface;
 

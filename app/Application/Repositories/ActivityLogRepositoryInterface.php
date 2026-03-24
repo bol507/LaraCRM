@@ -20,6 +20,28 @@ interface ActivityLogRepositoryInterface
     public function getRecentActivities(int $limit = 20): ActivityLogListDTO;
 
     /**
+     *  get recent activities with advanced filters
+     *
+     * @param integer $limit
+     * @param string|null $entityType
+     * @param string|null $action
+     * @param integer|null $userId
+     * @param string|null $dateFrom
+     * @param string|null $dateTo
+     * @param string|null $search
+     * @return ActivityLogListDTO
+     */
+    public function getRecentActivitiesWithFilters(
+        int $limit = 50,
+        ?string $entityType = null,
+        ?string $action = null,
+        ?int $userId = null,
+        ?string $dateFrom = null,
+        ?string $dateTo = null,
+        ?string $search = null
+    ): ActivityLogListDTO;
+
+    /**
      * Get activities by entity type.
      * 
      * @param string $entityType Entity type (project, client, etc.)

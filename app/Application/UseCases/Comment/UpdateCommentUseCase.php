@@ -5,8 +5,11 @@ namespace App\Application\UseCases\Comment;
 use App\Application\Repositories\CommentRepositoryInterface;
 use App\Application\DTOs\Comment\UpdateCommentRequest;
 use App\Domain\Entities\Comment;
+use App\Services\CurrentUserService;
+use App\Services\VtigerActivityTracker;
 use InvalidArgumentException;
 use DomainException;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -111,28 +114,64 @@ class UpdateCommentUseCase
      * );
      * $success = $useCase->execute(456, $request, userId: 123);
      */
-    public function execute(int $commentId, UpdateCommentRequest $request, int $userId): bool
+    public function execute(int $commentId, UpdateCommentRequest $request, ?int $userId = null): bool
     {
-        //  Validate input parameters
+        // Determine user (JWT or parameter)
+        $userId = $userId ?? CurrentUserService::idOr(1);
+        Log::debug('UpdateCommentUseCase::execute', [
+            'commentId' => $commentId,
+            'userId' => $userId,
+        ]);
+        
+        // Validate input parameters
         $this->validateParameters($commentId, $userId);
 
-        //  Fetch the existing comment
+        // Fetch the existing comment
         $comment = $this->repository->findById($commentId);
         if (!$comment) {
+            Log::warning('Comment not found', ['commentId' => $commentId]);
             throw new DomainException("Comment {$commentId} not found or has been deleted");
         }
 
-        //  Business rule: Verify user is authorized to update this comment
+        // Business rule: Verify user is authorized to update this comment
         $this->verifyUpdatePermission($comment, $userId);
 
-        //  Business rule: Validate update data against domain rules
+        // Business rule: Validate update data against domain rules
         $this->validateUpdateData($request, $comment);
 
-        //  Business rule: Prepare update data for repository
+        // Business rule: Prepare update data for repository
         $updateData = $this->prepareUpdateData($request, $comment, $userId);
 
-        //  Delegate persistence to repository layer
-        return $this->repository->update($commentId, $updateData);
+        // Delegate persistence to repository layer
+        $updated = $this->repository->update($commentId, $updateData);
+        
+        if (!$updated) {
+            Log::error('Failed to update comment in repository', ['commentId' => $commentId]);
+            throw new RuntimeException('Failed to update comment');
+        }
+
+        // Register activity in vtiger_modtracker_basic
+        try {
+            VtigerActivityTracker::updated(
+                module: 'ModComments',  // Correct module for comments
+                crmid: $commentId,
+                userId: $userId
+            );
+            
+            Log::info('Activity logged for comment update', [
+                'commentId' => $commentId,
+                'module' => 'ModComments',
+                'userId' => $userId,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to log activity for comment update', [
+                'commentId' => $commentId,
+                'error' => $e->getMessage(),
+            ]);
+            // Do not rethrow to avoid breaking the main flow
+        }
+
+        return $updated;
     }
 
     /**

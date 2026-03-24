@@ -12,10 +12,10 @@ class GetContactUseCase
     ) {}
 
     /**
-     * Obtener contacto por ID
+     * Get contact by ID
      * 
-     * @param int $id ID del contacto
-     * @return Contact|null Contacto encontrado o null si no existe
+     * @param int $id Contact ID
+     * @return Contact|null Contact found or null if not exists
      */
     public function execute(int $id): ?Contact
     {

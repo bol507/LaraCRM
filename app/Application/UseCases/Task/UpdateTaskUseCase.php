@@ -5,8 +5,12 @@ namespace App\Application\UseCases\Task;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\DTOs\Task\UpdateTaskRequest;
 use App\Domain\Entities\Task;
+use App\Services\CurrentUserService;
+use App\Services\VtigerActivityTracker;
 use InvalidArgumentException;
 use DomainException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -133,39 +137,111 @@ class UpdateTaskUseCase
      * );
      * $success = $useCase->execute(taskId: 123, request: $request, userId: 456);
      */
-    public function execute(int $taskId, UpdateTaskRequest $request, int $userId): bool
+    public function execute(int $taskId, UpdateTaskRequest $request,  ?int $userId = null): bool
     {
-        // ✅ Validate input parameters
+        $userId = $userId ?? CurrentUserService::idOr(1);
+
+        Log::debug('UpdateTaskUseCase::execute', [
+            'taskId' => $taskId,
+            'userId' => $userId,
+            'subject' => $request->subject ?? null,
+        ]);
+        // Validate input parameters
         $this->validateParameters($taskId, $userId);
 
-        // ✅ Fetch the existing task
+        // Get existing task
         $task = $this->repository->findById($taskId);
         if (!$task) {
+            Log::warning('Task not found', ['taskId' => $taskId]);
             return false;
         }
 
-        // ✅ Business rule: Verify user is authorized to update this task
+        // Business rule: Verify update permissions
         $this->verifyUpdatePermission($task, $userId);
 
-        // ✅ Business rule: Validate status transitions
-        if ($request->shouldUpdateStatus()) {
+        // Business rule: Validate status transitions
+        if ($this->requestHasField($request, 'status') && $request->status) {
             $this->validateStatusTransition($task, $request->status);
         }
 
-        // ✅ Business rule: Validate date consistency
-        if ($request->shouldUpdateDates()) {
+        // Business rule: Validate date consistency
+        if ($this->requestHasField($request, 'dateStart') || $this->requestHasField($request, 'dueDate')) {
             $this->validateDateConsistency($request, $task);
         }
 
-        // ✅ Prepare update data for repository
+        // Prepare update data for the repository
         $updateData = $request->toUpdateArray();
-
-        // ✅ Add audit metadata
         $updateData['modified_by'] = $userId;
         $updateData['modified_time'] = now()->format('Y-m-d H:i:s');
 
-        // ✅ Delegate persistence to repository layer
-        return $this->repository->update($taskId, $updateData);
+        // Update task in the repository
+        $updated = $this->repository->update($taskId, $updateData, $userId);
+
+        if (!$updated) {
+            Log::error('Failed to update task in repository', ['taskId' => $taskId]);
+            throw new \Exception('Failed to update task');
+        }
+        try {
+            // Synchronize vtiger_crmentity.label if the subject changed
+            // Check if subject field exists and is not empty
+            if ($this->requestHasField($request, 'subject') && !empty(trim($request->subject))) {
+                $affected = DB::connection('vtiger')
+                    ->table('vtiger_crmentity')
+                    ->where('crmid', $taskId)
+                    ->where('setype', 'Tasks')
+                    ->update([
+                        'label' => trim($request->subject),
+                        'modifiedtime' => now(),
+                    ]);
+                Log::debug('vtiger_crmentity.label updated', [
+                    'crmid' => $taskId,
+                    'setype' => 'Tasks',
+                    'label' =>  trim($request->subject),
+                    'affected' => $affected,
+                ]);
+            }
+        } catch (\Exception $e) {
+            // Do not throw exception to avoid breaking the main flow, but log it
+            Log::error('Failed to sync vtiger_crmentity.label', [
+                'taskId' => $taskId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+        try {
+            // Register activity in vtiger_modtracker_basic
+            VtigerActivityTracker::updated(
+                module: 'Calendar',
+                crmid: $taskId,
+                userId: $userId
+            );
+            Log::info('Activity logged for task update', [
+                'taskId' => $taskId,
+                'module' => 'Calendar',
+                'userId' => $userId,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to log activity for task update', [
+                'taskId' => $taskId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            // Do not rethrow to avoid breaking the main flow
+        }   
+
+        return $updated;
+    }
+
+    /**
+     * Helper to check if a field exists in the request and is not null.
+     * 
+     * @param object $request The request object (DTO)
+     * @param string $field Name of the field to check
+     * @return bool True if the field exists and is not null
+     */
+    private function requestHasField(object $request, string $field): bool
+    {
+        return property_exists($request, $field) && $request->$field !== null;
     }
 
     /**
@@ -223,7 +299,7 @@ class UpdateTaskUseCase
         // If no rule matched, deny update
         throw new DomainException(
             "User {$userId} is not authorized to update task {$task->getId()}. " .
-            "Only the assigned user, creator, or an administrator can update tasks."
+                "Only the assigned user, creator, or an administrator can update tasks."
         );
     }
 
@@ -253,7 +329,7 @@ class UpdateTaskUseCase
             if (!$this->config['allow_status_reopen']) {
                 throw new DomainException(
                     "Cannot change status of completed tasks. " .
-                    "Completed tasks cannot be reopened without administrator permission."
+                        "Completed tasks cannot be reopened without administrator permission."
                 );
             }
         }
@@ -298,7 +374,7 @@ class UpdateTaskUseCase
         // TODO: Implement based on your auth system
         // Example: Check if user has 'admin' role in vtiger_users or custom roles table
         // return $this->userRepository->hasRole($userId, 'admin');
-        
+
         // Default: no admin override
         return false;
     }

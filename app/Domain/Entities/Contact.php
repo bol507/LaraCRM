@@ -5,7 +5,7 @@ namespace App\Domain\Entities;
 use InvalidArgumentException;
 
 /**
- * Contact Entity - Persona individual asociada a un Account
+ * Contact Entity - Individual person associated with an Account
  * 
  * @package App\Domain\Entities
  */
@@ -45,7 +45,7 @@ class Contact
     ) {}
 
     /**
-     * create instance from array (for mappers/repositories)
+     * Create instance from array (for mappers/repositories)
      */
     public static function fromArray(array $data): self
     {
@@ -83,7 +83,7 @@ class Contact
     }
 
     /**
-     * transform to array for serialization/API
+     * Transform to array for serialization/API
      */
     public function toArray(): array
     {
@@ -117,7 +117,7 @@ class Contact
             'reports_to_id' => $this->reports_to_id,
             'leadsource' => $this->leadsource,
             'contact_status' => $this->contact_status,
-            // Campo calculado para display
+            // Calculated field for display
             'full_name' => trim("{$this->firstname} {$this->lastname}"),
         ];
     }
@@ -130,20 +130,20 @@ class Contact
     public function validate(): void
     {
         if (empty($this->firstname) || empty($this->lastname)) {
-            throw new InvalidArgumentException('Nombre y apellido son requeridos');
+            throw new InvalidArgumentException('First name and last name are required');
         }
         
         if (!filter_var($this->email, FILTER_VALIDATE_EMAIL)) {
-            throw new InvalidArgumentException('Email inválido');
+            throw new InvalidArgumentException('Invalid email');
         }
         
         if ($this->accountid <= 0) {
-            throw new InvalidArgumentException('El contacto debe estar asociado a un cliente válido');
+            throw new InvalidArgumentException('The contact must be associated with a valid client');
         }
     }
 
     /**
-     * Verificar si el contacto está activo (no eliminado)
+     * Check if the contact is active (not deleted)
      */
     public function isActive(): bool
     {
@@ -151,7 +151,7 @@ class Contact
     }
 
     /**
-     * Obtener nombre completo formateado
+     * Get formatted full name
      */
     public function getFullName(): string
     {

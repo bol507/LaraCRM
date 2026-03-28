@@ -2,6 +2,7 @@
 
 namespace App\Application\UseCases\Contact;
 
+use App\Application\DTOs\Contact\ContactCreateData;
 use App\Application\Repositories\ContactRepositoryInterface;
 use InvalidArgumentException;
 
@@ -14,30 +15,35 @@ class CreateContactUseCase
     /**
      * Create a new contact
      * 
-     * @param array $contactData Contact data
-     * @param int $createdByUserId ID of the authenticated user
+     * @param ConctactCreateData $contactData Data to create
      * @return int ID of the created contact
      * 
      * @throws InvalidArgumentException If the data is invalid
      */
-    public function execute(array $contactData, int $createdByUserId): int
+    public function execute(ContactCreateData $data): int
     {
         // Business validations
-        $this->validateCreateContactData($contactData);
-
-        // Verify that the account exists
-        if (!$this->contactRepository->accountExists($contactData['accountid'])) {
-            throw new InvalidArgumentException('The specified client does not exist');
+        $this->validateContactData($data->contactDetails);
+        
+        // Validate that the contact does not report to itself
+        if (isset($data->contactDetails['accountid']) && $data->contactDetails['accountid'] !== null) {
+            if (!$this->contactRepository->accountExists($data->contactDetails['accountid'])) {
+                throw new InvalidArgumentException('El cliente especificado no existe');
+            }
         }
 
         // Prepare data with default values
-        $contactData = array_merge([
-            'contact_status' => 'Active',
-            'deleted' => 0,
-        ], $contactData);
+         $contactDetails = array_merge([
+            'contacttype' => 'Active', 
+        ], $data->contactDetails);
 
         // Create contact
-        return $this->contactRepository->create($contactData, $createdByUserId);
+         return $this->contactRepository->createWithDto(
+            contactDetails: $contactDetails,
+            crmentityData: $data->getCrmentityData()
+        );
+
+        return $contactId;
     }
 
     /**
@@ -45,62 +51,22 @@ class CreateContactUseCase
      * 
      * @throws InvalidArgumentException
      */
-    private function validateCreateContactData(array $data): void
+    private function validateContactData(array $contactDetails): void
     {
-        // Required fields for creation
-        if (empty($data['firstname'])) {
-            throw new InvalidArgumentException('First name is required');
+        if (empty($contactDetails['lastname'])) {
+            throw new InvalidArgumentException('El apellido es requerido');
         }
-        if (empty($data['lastname'])) {
-            throw new InvalidArgumentException('Last name is required');
+        
+        if (!empty($contactDetails['email']) && !filter_var($contactDetails['email'], FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidArgumentException('Email inválido');
         }
-        if (empty($data['email'])) {
-            throw new InvalidArgumentException('Email is required');
+        
+        // Validar longitudes según BD
+        if (!empty($contactDetails['firstname']) && strlen($contactDetails['firstname']) > 40) {
+            throw new InvalidArgumentException('Nombre no puede exceder 40 caracteres');
         }
-        if (empty($data['accountid'])) {
-            throw new InvalidArgumentException('Client (account) is required');
-        }
-
-        // Validate formats
-        if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-            throw new InvalidArgumentException('Email has an invalid format');
-        }
-
-        // Validate lengths
-        $this->validateStringLength($data['firstname'], 100, 'First name');
-        $this->validateStringLength($data['lastname'], 100, 'Last name');
-        $this->validateStringLength($data['email'], 255, 'Email');
-
-        // Validate accountid as positive integer
-        if (!is_numeric($data['accountid']) || (int) $data['accountid'] <= 0) {
-            throw new InvalidArgumentException('Client ID must be a valid number');
-        }
-
-        // Validate optional fields if provided
-        if (!empty($data['phone'])) {
-            $this->validateStringLength($data['phone'], 50, 'Phone');
-        }
-        if (!empty($data['mobile'])) {
-            $this->validateStringLength($data['mobile'], 50, 'Mobile');
-        }
-        if (!empty($data['secondaryemail']) && !filter_var($data['secondaryemail'], FILTER_VALIDATE_EMAIL)) {
-            throw new InvalidArgumentException('Secondary email has an invalid format');
-        }
-        if (!empty($data['birthdate']) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['birthdate'])) {
-            throw new InvalidArgumentException('Birth date must be in YYYY-MM-DD format');
-        }
-        if (!empty($data['contact_status']) && !in_array($data['contact_status'], ['Active', 'Inactive'])) {
-            throw new InvalidArgumentException('Contact status must be "Active" or "Inactive"');
-        }
-    }
-
-    /**
-     * Helper to validate string length
-     */
-    private function validateStringLength(?string $value, int $max, string $fieldName): void
-    {
-        if ($value !== null && strlen($value) > $max) {
-            throw new InvalidArgumentException("{$fieldName} cannot exceed {$max} characters");
+        if (!empty($contactDetails['lastname']) && strlen($contactDetails['lastname']) > 80) {
+            throw new InvalidArgumentException('Apellido no puede exceder 80 caracteres');
         }
     }
 }

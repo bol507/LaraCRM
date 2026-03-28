@@ -41,6 +41,7 @@ class CommentMapper
             modifiedtime: $row['modifiedtime'] ??  null,
             assigned_user_name: $row['assigned_user_name'] ?? $row['userName'] ?? null,
             assigned_user_email: $row['assigned_user_email'] ?? $row['userEmail'] ?? null,
+            relatedModule: $row['relatedModule'] ?? $row['related_module'] ?? null,
         );
     }
 

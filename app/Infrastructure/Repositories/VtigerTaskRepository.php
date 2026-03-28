@@ -3,6 +3,7 @@
 namespace App\Infrastructure\Repositories;
 
 use App\Application\DTOs\Task\CreateTaskRequest;
+use App\Application\DTOs\Task\UpdateTaskData;
 use App\Application\DTOs\Task\UpdateTaskStatusRequest;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Domain\Entities\Task;
@@ -554,77 +555,66 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
-    public function update(int $taskId, array $data): bool
+    public function update(int $taskId, UpdateTaskData $data): bool
     {
         if ($taskId <= 0) {
             throw new InvalidArgumentException("Task ID must be positive, got {$taskId}");
         }
 
+        Log::info('=== Task Update Debug ===', [
+            'taskId' => $taskId,
+            'activityData' => $data->getActivityData(),
+            'due_date_present' => isset($data->getActivityData()['due_date']),
+            'due_date_value' => $data->getActivityData()['due_date'] ?? null,
+        ]);
+
+        // Early return if no changes
+        if (!$data->hasChanges()) {
+            return true;
+        }
+
         try {
-            $now = now()->format('Y-m-d H:i:s');
-            $updated = false;
+            $connection = DB::connection('vtiger');
 
-            // Prepare update data for vtiger_activity (only include provided fields)
-            $activityUpdate = [];
+            if (!empty($data->getActivityData())) {
+                $activityData = $data->getActivityData();
 
-            $updatableFields = [
-                'subject',
-                'date_start',
-                'due_date',
-                'time_start',
-                'time_end',
-                'status',
-                'priority',
-                'location',
-                'description',
-                'related_record_id',
-                'related_module_type',
-                'sendnotification',
-            ];
 
-            foreach ($updatableFields as $field) {
-                if (isset($data[$field])) {
-                    // Map PHP naming to database column names
-                    $column = match ($field) {
-                        'related_record_id' => null, // Handled separately via vtiger_seactivityrel
-                        'related_module_type' => null,
-                        'sendnotification' => 'sendnotification',
-                        default => $field,
-                    };
+                unset($activityData['modifiedtime']);
 
-                    if ($column) {
-                        $activityUpdate[$column] = $data[$field];
-                    }
+                $affected = $connection->table('vtiger_activity')
+                    ->where('activityid', $taskId)
+                    ->update($activityData);
+
+                if ($affected === false) {
+                    throw new RuntimeException("Failed to update vtiger_activity for task {$taskId}");
                 }
             }
 
-            // Update vtiger_activity if there are fields to update
-            if (!empty($activityUpdate)) {
-                $activityUpdate['modifiedtime'] = $now;
+            // Update vtiger_crmentity table
+            if (!empty($data->getCrmentityData())) {
+                $affected = $connection->table('vtiger_crmentity')
+                    ->where('crmid', $taskId)
+                    ->update($data->getCrmentityData());
 
-                $updated = DB::connection('vtiger')
-                    ->table('vtiger_activity')
-                    ->where('activityid', $taskId)
-                    ->update($activityUpdate) > 0;
+                if ($affected === false) {
+                    throw new RuntimeException("Failed to update vtiger_crmentity for task {$taskId}");
+                }
             }
 
-            // Handle related record relationship updates
-            if (isset($data['related_record_id']) || isset($data['related_module_type'])) {
-                $this->updateTaskRelationship($taskId, $data);
-                $updated = true;
+            // Sync label in vtiger_crmentity if subject changed
+            $subjectForLabel = $data->getSubjectForLabelSync();
+            if ($subjectForLabel !== null) {
+                $connection->table('vtiger_crmentity')
+                    ->where('crmid', $taskId)
+                    ->where('setype', 'Calendar')
+                    ->update([
+                        'label' => trim($subjectForLabel),
+                        'modifiedtime' => now()->format('Y-m-d H:i:s'),
+                    ]);
             }
 
-            // Always update modifiedtime in vtiger_crmentity for audit consistency
-            DB::connection('vtiger')
-                ->table('vtiger_crmentity')
-                ->where('crmid', $taskId)
-                ->update([
-                    'modifiedtime' => $now,
-                    'modifiedby' => $data['modified_by'] ?? 0,
-                    'version' => DB::raw('version + 1'),
-                ]);
-
-            return $updated;
+            return true;
         } catch (\Exception $e) {
             throw new RuntimeException(
                 "Failed to update task {$taskId}: " . $e->getMessage(),
@@ -632,7 +622,6 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             );
         }
     }
-
     /**
      * {@inheritDoc}
      */
@@ -1213,9 +1202,9 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_activity.activitytype', 'Task')
-            ->where(function($q) use ($query) {
+            ->where(function ($q) use ($query) {
                 $q->where('vtiger_activity.subject', 'LIKE', "%{$query}%")
-                  ->orWhere('vtiger_crmentity.description', 'LIKE', "%{$query}%");
+                    ->orWhere('vtiger_crmentity.description', 'LIKE', "%{$query}%");
             })
             ->select(
                 'vtiger_activity.activityid as id',

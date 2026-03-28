@@ -34,11 +34,25 @@ class ActivityLogController extends Controller
         // Validate input parameters
         $validated = $request->validate([
             'limit' => 'nullable|integer|min:1|max:100',
+            'offset' => 'nullable|integer|min:0',
+            'entity_type' => 'nullable|string',
+            'action' => 'nullable|string',
+            'user_id' => 'nullable|integer',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'search' => 'nullable|string|max:100',
         ]);
 
         // Execute use case
         $result = $this->getRecentActivitiesUseCase->execute(
-            $validated['limit'] ?? null
+            limit: $validated['limit'] ?? null,
+            offset: $validated['offset'] ?? null, // ✅ Pasar offset
+            entityType: $validated['entity_type'] ?? null,
+            action: $validated['action'] ?? null,
+            userId: $validated['user_id'] ?? null,
+            dateFrom: $validated['date_from'] ?? null,
+            dateTo: $validated['date_to'] ?? null,
+            search: $validated['search'] ?? null
         );
 
         // Return response

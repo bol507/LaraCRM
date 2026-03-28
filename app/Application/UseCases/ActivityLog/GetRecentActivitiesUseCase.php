@@ -16,7 +16,7 @@ use App\Application\Repositories\ActivityLogRepositoryInterface;
  */
 final readonly class GetRecentActivitiesUseCase
 {
-    private const DEFAULT_LIMIT = 50;
+    private const DEFAULT_LIMIT = 20;
     private const MAX_LIMIT = 200;
 
     public function __construct(
@@ -39,6 +39,7 @@ final readonly class GetRecentActivitiesUseCase
      */
     public function execute(
         ?int $limit = null,
+        ?int $offset = null,
         ?string $entityType = null,
         ?string $action = null,
         ?int $userId = null,
@@ -47,11 +48,13 @@ final readonly class GetRecentActivitiesUseCase
         ?string $search = null
     ): ActivityLogListDTO {
         $limit = $this->normalizeLimit($limit);
+        $offset = $offset ?? 0;
 
         // If filters are present, use the filtered method
         if ($entityType || $action || $userId || $dateFrom || $dateTo || $search) {
             return $this->activityLogRepository->getRecentActivitiesWithFilters(
                 limit: $limit,
+                offset: $offset,
                 entityType: $entityType,
                 action: $action,
                 userId: $userId,

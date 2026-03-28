@@ -403,7 +403,7 @@ class TaskController extends Controller
 
             if (isset($validated['assigned_user_id']) && $validated['assigned_user_id'] !== null) {
                 $requestedAssigneeId = (int) $validated['assigned_user_id'];
-                
+
                 if ($requestedAssigneeId !== $user->getId()) {
                     // ✅ Usar UseCase en lugar de acceder a BD directamente
                     if (!$this->isAdminUseCase->execute($user->getId())) {
@@ -412,7 +412,7 @@ class TaskController extends Controller
                             'message' => 'Solo los administradores pueden asignar tareas a otros usuarios'
                         ], 403);
                     }
-                    
+
                     $assignedUserId = $requestedAssigneeId;
                 }
             }
@@ -442,7 +442,6 @@ class TaskController extends Controller
                 'message' => 'Task created successfully',
                 'data' => $dto?->toArray(),
             ], 201);
-
         } catch (ValidationException $e) {
             return response()->json([
                 'error' => 'Validation failed',
@@ -530,16 +529,19 @@ class TaskController extends Controller
             }
 
             // Framework-level validation (HTTP layer)
-            $validated = $request->validate([
+            $request->validate([
                 'subject' => 'nullable|string|max:255',
                 'date_start' => 'nullable|date',
                 'due_date' => 'nullable|date|after_or_equal:date_start',
+                'dueDate' => 'nullable|date|after_or_equal:date_start',
                 'time_start' => 'nullable|date_format:H:i',
                 'time_end' => 'nullable|date_format:H:i|after:time_start',
                 'priority' => 'nullable|string|in:Low,Medium,High',
                 'status' => 'nullable|string|in:Not Started,In Progress,Completed,Pending Input,Planned',
                 'location' => 'nullable|string|max:150',
                 'description' => 'nullable|string',
+                'assigned_user_id' => 'nullable|integer|exists:vtiger.vtiger_users,id',
+                'assignedUserId' => 'nullable|integer|exists:vtiger.vtiger_users,id',
                 'related_record_id' => 'nullable|integer',
                 'related_module_type' => 'nullable|string|max:50',
                 'send_notification' => 'nullable|boolean',
@@ -547,19 +549,28 @@ class TaskController extends Controller
 
             // Create DTO with validated data (null = don't update this field)
             $updateRequest = new UpdateTaskRequest(
-                subject: $validated['subject'] ?? null,
-                dateStart: $validated['date_start'] ?? null,
-                dueDate: $validated['due_date'] ?? null,
-                timeStart: $validated['time_start'] ?? null,
-                timeEnd: $validated['time_end'] ?? null,
-                priority: $validated['priority'] ?? null,
-                status: $validated['status'] ?? null,
-                location: $validated['location'] ?? null,
-                description: $validated['description'] ?? null,
-                relatedRecordId: $validated['related_record_id'] ?? null,
-                relatedModuleType: $validated['related_module_type'] ?? null,
-                sendNotification: $validated['send_notification'] ?? null,
+                subject: $request->input('subject'),
+                dateStart: $request->input('date_start') ?? $request->input('dateStart'),
+                dueDate: $request->input('due_date') ?? $request->input('dueDate'),  
+                timeStart: $request->input('time_start') ?? $request->input('timeStart'),
+                timeEnd: $request->input('time_end') ?? $request->input('timeEnd'),
+                priority: $request->input('priority'),
+                status: $request->input('status'),
+                location: $request->input('location'),
+                description: $request->input('description'),
+                assignedUserId: $request->input('assigned_user_id') ?? $request->input('assignedUserId'),
+                relatedRecordId: $request->input('related_record_id') ?? $request->input('relatedRecordId'),
+                relatedModuleType: $request->input('related_module_type') ?? $request->input('relatedModuleType'),
+                sendNotification: $request->input('send_notification') ?? $request->input('sendNotification'),
             );
+
+            // Debug log para verificar
+            Log::info('UpdateTaskRequest created', [
+                'dueDate' => $updateRequest->dueDate,
+                'dateStart' => $updateRequest->dateStart,
+                'subject' => $updateRequest->subject,
+                'location' => $updateRequest->location,
+            ]);
 
             // Execute use case: authorization + domain validation + persistence
             $success = $this->updateTaskUseCase->execute(
@@ -574,11 +585,11 @@ class TaskController extends Controller
 
             // Fetch updated task for response
             $task = $this->getTaskUseCase->execute($taskId);
-            $dto = $task ? ($task instanceof TaskDto ? $task : TaskDto::fromEntity($task)) : null;
+            $taskDto = $task ? TaskDto::fromEntity($task) : null;
 
             return response()->json([
                 'message' => 'Task updated successfully',
-                'data' => $dto?->toArray(),
+                'data' => $taskDto?->toArray(),
             ]);
         } catch (ValidationException $e) {
             // HTTP validation errors (422)
@@ -870,6 +881,4 @@ class TaskController extends Controller
         $parsed = filter_var($value, FILTER_VALIDATE_INT);
         return $parsed !== false ? $parsed : null;
     }
-
-    
 }

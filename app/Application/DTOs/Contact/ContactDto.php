@@ -13,14 +13,14 @@ class ContactDto
 {
     public function __construct(
         public readonly int $contactid,
-        public readonly string $firstname,
+        public readonly ?string $firstname = null,
         public readonly string $lastname,
-        public readonly string $email,
+        public readonly ?string $email = null,
         public readonly ?string $phone = null,
         public readonly ?string $mobile = null,
         public readonly ?string $title = null,
         public readonly ?string $department = null,
-        public readonly int $accountid,
+        public readonly ?int $accountid = null,
         public readonly ?string $account_name = null,
         public readonly ?string $assigned_user_name = null,
         public readonly ?string $description = null,
@@ -29,25 +29,26 @@ class ContactDto
     ) {}
 
     /**
-     * Create DTO from Contact entity
+     * Create DTO from Contact entity or database row
+     * @param Contact|object $contact
      */
-    public static function fromEntity(Contact $contact): self
+    public static function fromEntity(mixed $contact): self
     {
         return new self(
-            contactid: $contact->contactid,
-            firstname: $contact->firstname,
-            lastname: $contact->lastname,
-            email: $contact->email,
-            phone: $contact->phone,
-            mobile: $contact->mobile,
-            title: $contact->title,
-            department: $contact->department,
-            accountid: $contact->accountid,
-            account_name: $contact->account_name,
-            assigned_user_name: $contact->assigned_user_name,
-            description: $contact->description,
-            createdtime: $contact->createdtime,
-            contact_status: $contact->contact_status,
+            contactid: (int) ($contact->contactid ?? $contact->contactid),
+            firstname: $contact->firstname ?? null,
+            lastname: $contact->lastname ?? '',
+            email: $contact->email ?? null,
+            phone: $contact->phone ?? null,
+            mobile: $contact->mobile ?? null,
+            title: $contact->title ?? null,
+            department: $contact->department ?? null,
+            accountid: !empty($contact->accountid) ? (int) $contact->accountid : null,
+            account_name: $contact->accountname ?? $contact->account_name ?? null,
+            assigned_user_name: $contact->assigned_user_name ?? $contact->user_name ?? null,
+            description: $contact->description ?? null,
+            createdtime: $contact->createdtime ?? null,
+            contact_status: $contact->contact_status ?? 'Active',
         );
     }
 

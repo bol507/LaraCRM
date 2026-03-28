@@ -2,6 +2,7 @@
 
 namespace App\Infrastructure\Repositories;
 
+use App\Application\DTOs\Contact\ContactUpdateData;
 use App\Application\Repositories\ContactRepositoryInterface;
 use App\Domain\Entities\Contact;
 use App\Infrastructure\Mappers\ContactMapper;
@@ -11,10 +12,39 @@ use Illuminate\Support\Facades\DB;
 class VtigerContactRepository implements ContactRepositoryInterface
 {
 
-    
+    /**
+     * @inheritDoc
+     */
+    public function createWithDto(array $contactDetails, array $crmentityData): int
+    {
+        return DB::connection('vtiger')->transaction(function () use ($contactDetails, $crmentityData) {
+            // Generate unique ID
+            $maxCrmid = DB::connection('vtiger')
+                ->table('vtiger_crmentity')
+                ->max('crmid');
+            $crmid = $maxCrmid ? $maxCrmid + 1 : 1;
+
+
+            DB::connection('vtiger')
+                ->table('vtiger_crmentity')
+                ->insert([
+                    'crmid' => $crmid,
+                    ...$crmentityData,
+                ]);
+
+            $contactDetailsData = ContactMapper::toContactDetailsArray($contactDetails, $crmid);
+            DB::connection('vtiger')->table('vtiger_contactdetails')->insert([
+                'contactid' => $crmid,
+                ...$contactDetailsData,
+            ]);
+
+            return $crmid;
+        });
+    }
 
     /**
      * Create a new contact
+     * @deprecated Use CreateWithDto() instead
      */
     public function create(array $contactData, int $createdByUserId): int
     {
@@ -41,8 +71,16 @@ class VtigerContactRepository implements ContactRepositoryInterface
             ]);
 
             // 2. Insert into vtiger_contactdetails
+            $contactNo = 'CON' . date('Y') . str_pad(
+                DB::connection('vtiger')->table('vtiger_contactdetails')->count() + 1,
+                4,
+                '0',
+                STR_PAD_LEFT
+            );
+
             DB::connection('vtiger')->table('vtiger_contactdetails')->insert([
                 'contactid' => $crmid,
+                'contact_no' => $contactNo,
                 'accountid' => $mappedData['accountid'],
                 'firstname' => $mappedData['firstname'],
                 'lastname' => $mappedData['lastname'],
@@ -51,19 +89,6 @@ class VtigerContactRepository implements ContactRepositoryInterface
                 'mobile' => $mappedData['mobile'],
                 'title' => $mappedData['title'],
                 'department' => $mappedData['department'],
-                'mailingstreet' => $mappedData['mailingstreet'],
-                'mailingcity' => $mappedData['mailingcity'],
-                'mailingstate' => $mappedData['mailingstate'],
-                'mailingcountry' => $mappedData['mailingcountry'],
-                'mailingzip' => $mappedData['mailingzip'],
-                'otherphone' => $mappedData['otherphone'],
-                'fax' => $mappedData['fax'],
-                'secondaryemail' => $mappedData['secondaryemail'],
-                'assistant' => $mappedData['assistant'],
-                'birthdate' => $mappedData['birthdate'],
-                'reports_to_id' => $mappedData['reports_to_id'],
-                'leadsource' => $mappedData['leadsource'],
-                'contact_status' => $mappedData['contact_status'],
             ]);
 
             return $crmid;
@@ -86,19 +111,6 @@ class VtigerContactRepository implements ContactRepositoryInterface
                 'vtiger_contactdetails.title',
                 'vtiger_contactdetails.department',
                 'vtiger_contactdetails.accountid',
-                'vtiger_contactdetails.mailingstreet',
-                'vtiger_contactdetails.mailingcity',
-                'vtiger_contactdetails.mailingstate',
-                'vtiger_contactdetails.mailingcountry',
-                'vtiger_contactdetails.mailingzip',
-                'vtiger_contactdetails.otherphone',
-                'vtiger_contactdetails.fax',
-                'vtiger_contactdetails.secondaryemail',
-                'vtiger_contactdetails.assistant',
-                'vtiger_contactdetails.birthdate',
-                'vtiger_contactdetails.reports_to_id',
-                'vtiger_contactdetails.leadsource',
-                'vtiger_contactdetails.contact_status',
                 // Campos de vtiger_crmentity
                 'vtiger_crmentity.description',
                 'vtiger_crmentity.createdtime',
@@ -143,7 +155,6 @@ class VtigerContactRepository implements ContactRepositoryInterface
                 'vtiger_contactdetails.title',
                 'vtiger_contactdetails.department',
                 'vtiger_contactdetails.accountid',
-                'vtiger_contactdetails.contact_status',
                 'vtiger_crmentity.createdtime',
                 'vtiger_crmentity.smownerid',
                 'vtiger_users.user_name as assigned_user_name',
@@ -159,10 +170,10 @@ class VtigerContactRepository implements ContactRepositoryInterface
             $search = "%{$filters['search']}%";
             $query->where(function ($q) use ($search) {
                 $q->where('vtiger_contactdetails.firstname', 'LIKE', $search)
-                  ->orWhere('vtiger_contactdetails.lastname', 'LIKE', $search)
-                  ->orWhere('vtiger_contactdetails.email', 'LIKE', $search)
-                  ->orWhere('vtiger_contactdetails.phone', 'LIKE', $search)
-                  ->orWhere('vtiger_contactdetails.mobile', 'LIKE', $search);
+                    ->orWhere('vtiger_contactdetails.lastname', 'LIKE', $search)
+                    ->orWhere('vtiger_contactdetails.email', 'LIKE', $search)
+                    ->orWhere('vtiger_contactdetails.phone', 'LIKE', $search)
+                    ->orWhere('vtiger_contactdetails.mobile', 'LIKE', $search);
             });
         }
 
@@ -174,15 +185,11 @@ class VtigerContactRepository implements ContactRepositoryInterface
             $query->where('vtiger_crmentity.smownerid', (int) $filters['assignedTo']);
         }
 
-        if (!empty($filters['status']) && in_array($filters['status'], ['Active', 'Inactive'])) {
-            $query->where('vtiger_contactdetails.contact_status', $filters['status']);
-        }
-
         // Sorting
         $sortBy = $filters['sortBy'] ?? 'lastname';
         $sortOrder = $filters['sortOrder'] ?? 'ASC';
         $validSorts = ['createdtime', 'lastname', 'email', 'firstname'];
-        
+
         if (in_array($sortBy, $validSorts)) {
             $column = match ($sortBy) {
                 'createdtime' => 'vtiger_crmentity.createdtime',
@@ -199,12 +206,52 @@ class VtigerContactRepository implements ContactRepositoryInterface
     }
 
     /**
+     * @inheritDoc
+     */
+    public function updateWithDto(ContactUpdateData $data): bool
+    {
+        return DB::connection('vtiger')->transaction(function () use ($data) {
+            // Verify that the contact exists in vtiger_contactdetails
+            $exists = DB::connection('vtiger')
+                ->table('vtiger_contactdetails')
+                ->where('contactid', $data->contactId)
+                ->exists();
+
+            if (!$exists) {
+                return false;
+            }
+
+            // 1. Update vtiger_contactdetails (only changed fields)
+            if (!empty($data->contactDetails)) {
+                DB::connection('vtiger')
+                    ->table('vtiger_contactdetails')
+                    ->where('contactid', $data->contactId)
+                    ->update($data->contactDetails);
+            }
+
+            // 2. Update vtiger_crmentity (always includes modifiedtime)
+            $crmentityData = $data->getCrmentityData();
+
+            if (!empty($crmentityData)) {
+                DB::connection('vtiger')
+                    ->table('vtiger_crmentity')
+                    ->where('crmid', $data->contactId)
+                    ->where('setype', 'Contacts')
+                    ->update($crmentityData);
+            }
+
+            return true;
+        });
+    }
+
+    /**
      * Update an existing contact
+     * @deprecated Use updateWithDto() instead
      */
     public function update(int $id, array $contactData): bool
     {
         return DB::connection('vtiger')->transaction(function () use ($id, $contactData) {
-            // Verify that it exists
+            // Verify that the contact exists
             $exists = DB::connection('vtiger')
                 ->table('vtiger_contactdetails')
                 ->where('contactid', $id)
@@ -214,44 +261,27 @@ class VtigerContactRepository implements ContactRepositoryInterface
                 return false;
             }
 
-            // Update vtiger_contactdetails
-            DB::connection('vtiger')
-                ->table('vtiger_contactdetails')
-                ->where('contactid', $id)
-                ->update([
-                    'firstname' => $contactData['firstname'] ?? null,
-                    'lastname' => $contactData['lastname'] ?? null,
-                    'email' => $contactData['email'] ?? null,
-                    'phone' => $contactData['phone'] ?? null,
-                    'mobile' => $contactData['mobile'] ?? null,
-                    'title' => $contactData['title'] ?? null,
-                    'department' => $contactData['department'] ?? null,
-                    'accountid' => $contactData['accountid'] ?? null,
-                    'mailingstreet' => $contactData['mailingstreet'] ?? null,
-                    'mailingcity' => $contactData['mailingcity'] ?? null,
-                    'mailingstate' => $contactData['mailingstate'] ?? null,
-                    'mailingcountry' => $contactData['mailingcountry'] ?? null,
-                    'mailingzip' => $contactData['mailingzip'] ?? null,
-                    'otherphone' => $contactData['otherphone'] ?? null,
-                    'fax' => $contactData['fax'] ?? null,
-                    'secondaryemail' => $contactData['secondaryemail'] ?? null,
-                    'assistant' => $contactData['assistant'] ?? null,
-                    'birthdate' => $contactData['birthdate'] ?? null,
-                    'reports_to_id' => $contactData['reports_to_id'] ?? null,
-                    'leadsource' => $contactData['leadsource'] ?? null,
-                    'contact_status' => $contactData['contact_status'] ?? null,
-                    'modifiedtime' => now()->format('Y-m-d H:i:s'),
-                ]);
+            // Use the mapper to get data grouped by table
+            $mappedData = ContactMapper::toPersistenceUpdate(
+                $contactData,
+                $contactData['assigned_user_id'] ?? null
+            );
 
-            // Update description in crmentity if provided
-            if (isset($contactData['description'])) {
+            // Update vtiger_contactdetails
+            if (!empty($mappedData['contactdetails'])) {
+                DB::connection('vtiger')
+                    ->table('vtiger_contactdetails')
+                    ->where('contactid', $id)
+                    ->update($mappedData['contactdetails']);
+            }
+
+            // Update vtiger_crmentity
+            if (!empty($mappedData['crmentity'])) {
                 DB::connection('vtiger')
                     ->table('vtiger_crmentity')
                     ->where('crmid', $id)
-                    ->update([
-                        'description' => $contactData['description'],
-                        'modifiedtime' => now()->format('Y-m-d H:i:s'),
-                    ]);
+                    ->where('setype', 'Contacts')
+                    ->update($mappedData['crmentity']);
             }
 
             return true;
@@ -293,9 +323,9 @@ class VtigerContactRepository implements ContactRepositoryInterface
             ->where(function ($q) use ($searchTerm) {
                 $search = "%{$searchTerm}%";
                 $q->where('vtiger_contactdetails.firstname', 'LIKE', $search)
-                  ->orWhere('vtiger_contactdetails.lastname', 'LIKE', $search)
-                  ->orWhere('vtiger_contactdetails.email', 'LIKE', $search)
-                  ->orWhereRaw('CONCAT(vtiger_contactdetails.firstname, " ", vtiger_contactdetails.lastname) LIKE ?', ["%{$searchTerm}%"]);
+                    ->orWhere('vtiger_contactdetails.lastname', 'LIKE', $search)
+                    ->orWhere('vtiger_contactdetails.email', 'LIKE', $search)
+                    ->orWhereRaw('CONCAT(vtiger_contactdetails.firstname, " ", vtiger_contactdetails.lastname) LIKE ?', ["%{$searchTerm}%"]);
             })
             ->limit($limit);
 
@@ -330,27 +360,28 @@ class VtigerContactRepository implements ContactRepositoryInterface
      */
     public function accountExists(int $accountId): bool
     {
+        // Verify in vtiger_crmentity where the deleted field actually exists
         return DB::connection('vtiger')
-            ->table('vtiger_account')
-            ->where('accountid', $accountId)
+            ->table('vtiger_crmentity')
+            ->where('crmid', $accountId)
+            ->where('setype', 'Accounts')
             ->where('deleted', 0)
             ->exists();
     }
 
     /**
      * Check if a contact exists and is active
+     * (Same pattern for consistency)
      */
     public function existsAndActive(int $contactId): bool
     {
         return DB::connection('vtiger')
-            ->table('vtiger_contactdetails')
-            ->join('vtiger_crmentity', 'vtiger_crmentity.crmid', '=', 'vtiger_contactdetails.contactid')
-            ->where('vtiger_contactdetails.contactid', $contactId)
-            ->where('vtiger_crmentity.deleted', 0)
-            ->where('vtiger_contactdetails.contact_status', 'Active')
+            ->table('vtiger_crmentity')
+            ->where('crmid', $contactId)
+            ->where('setype', 'Contacts')  // Filter by entity type
+            ->where('deleted', 0)           // deleted in crmentity
             ->exists();
     }
-
     /**
      * @inheritDoc
      *

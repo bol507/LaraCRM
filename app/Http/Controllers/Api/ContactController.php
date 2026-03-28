@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Application\DTOs\Contact\ContactCreateData;
 use App\Http\Controllers\Controller;
 use App\Application\UseCases\Contact\CreateContactUseCase;
 use App\Application\UseCases\Contact\ListContactsUseCase;
@@ -10,6 +11,7 @@ use App\Application\UseCases\Contact\UpdateContactUseCase;
 use App\Application\UseCases\Contact\DeleteContactUseCase;
 use App\Application\UseCases\Contact\SearchContactsUseCase;
 use App\Application\DTOs\Contact\ContactDto;
+use App\Application\DTOs\Contact\ContactUpdateData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -104,30 +106,30 @@ class ContactController extends Controller
     public function store(Request $request): JsonResponse
     {
         try {
-            // ✅ Obtener usuario autenticado desde middleware JWT
+            // get authenticated user from middleware JWT
             $authenticatedUser = $request->attributes->get('auth_user');
             if (!$authenticatedUser) {
-                return response()->json(['error' => 'User not authenticated'], Response::HTTP_UNAUTHORIZED);
+                return response()->json(
+                    ['error' => 'User not authenticated'],
+                    Response::HTTP_UNAUTHORIZED
+                );
             }
 
-            // ✅ Extraer y sanear datos del request (sin FormRequest)
-            $contactData = $this->sanitizeContactInput($request->all());
+            $authenticatedUserId = $authenticatedUser->getId();
 
-            // ✅ La validación ocurre DENTRO del Use Case
-            $contactId = $this->createContactUseCase->execute(
-                $contactData,
-                $authenticatedUser->getId()
+            $contactCreateData = ContactCreateData::fromRequest(
+                $request->all(),
+                $authenticatedUserId
             );
+
+            $contactId = $this->createContactUseCase->execute($contactCreateData);
 
             return response()->json([
                 'message' => 'Contact created successfully',
                 'data' => ['contactid' => $contactId]
             ], Response::HTTP_CREATED);
-
         } catch (InvalidArgumentException $e) {
-            // ✅ Errores de validación del dominio → 422
             return response()->json(['error' => $e->getMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
-            
         } catch (\Exception $e) {
             Log::error('Error creating contact: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
@@ -138,34 +140,67 @@ class ContactController extends Controller
     }
 
     /**
-     * Actualizar contacto existente
-     * 
+     * Update an existing contact
      * PUT /api/contacts/{id}
      */
     public function update(Request $request, int $id): JsonResponse
     {
         try {
-            // ✅ Extraer y sanear datos del request
-            $contactData = $this->sanitizeContactInput($request->all());
-
-            // ✅ La validación ocurre DENTRO del Use Case
-            $success = $this->updateContactUseCase->execute($id, $contactData);
-
-            if (!$success) {
-                return response()->json(['error' => 'Contact not found'], Response::HTTP_NOT_FOUND);
+            // Extract authenticated user from JWT
+            $authenticatedUser = $request->attributes->get('auth_user');
+            if (!$authenticatedUser) {
+                return response()->json(
+                    ['error' => 'User not authenticated'],
+                    Response::HTTP_UNAUTHORIZED
+                );
             }
 
-            return response()->json(['message' => 'Contact updated successfully']);
+            $authenticatedUserId = $authenticatedUser->getId();
 
-        } catch (InvalidArgumentException $e) {
-            return response()->json(['error' => $e->getMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
-            
+            // Create DTO from request + auth context
+            $contactUpdateData = ContactUpdateData::fromRequest(
+                $id,
+                $request->all(),
+                $authenticatedUserId
+            );
+
+            // If no changes, return success without doing anything
+            if (!$contactUpdateData->hasChanges()) {
+                return response()->json([
+                    'message' => 'No changes detected',
+                    'data' => ['contactid' => $id]
+                ]);
+            }
+
+            // Execute Use Case with DTO
+            $success = $this->updateContactUseCase->execute($contactUpdateData);
+
+            if (!$success) {
+                return response()->json(
+                    ['error' => 'Contact not found or already deleted'],
+                    Response::HTTP_NOT_FOUND
+                );
+            }
+
+            return response()->json([
+                'message' => 'Contact updated successfully',
+                'data' => ['contactid' => $id]
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(
+                ['error' => $e->getMessage()],
+                Response::HTTP_UNPROCESSABLE_ENTITY
+            );
         } catch (\Exception $e) {
             Log::error('Error updating contact: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
-                'request' => $request->all()
+                'request' => $request->all(),
+                'contact_id' => $id
             ]);
-            return response()->json(['error' => 'Error updating contact'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return response()->json(
+                ['error' => 'Error updating contact'],
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            );
         }
     }
 
@@ -184,10 +219,8 @@ class ContactController extends Controller
             }
 
             return response()->json(['message' => 'Contact deleted successfully']);
-
         } catch (InvalidArgumentException $e) {
             return response()->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
-            
         } catch (\Exception $e) {
             Log::error('Error deleting contact: ' . $e->getMessage());
             return response()->json(['error' => 'Error deleting contact'], Response::HTTP_INTERNAL_SERVER_ERROR);
@@ -216,7 +249,6 @@ class ContactController extends Controller
             );
 
             return response()->json(['data' => $results]);
-
         } catch (\Exception $e) {
             Log::error('Error searching contacts: ' . $e->getMessage());
             return response()->json(['error' => 'Error searching contacts'], Response::HTTP_INTERNAL_SERVER_ERROR);
@@ -257,37 +289,5 @@ class ContactController extends Controller
         ]);
     }
 
-    /**
-     * Sanear y preparar datos de entrada del contacto
-     * 
-     * Este método NO valida, solo limpia y normaliza datos.
-     * La validación real ocurre en los Use Cases.
-     */
-    private function sanitizeContactInput(array $input): array
-    {
-        return array_filter([
-            'firstname' => isset($input['firstname']) ? trim($input['firstname']) : null,
-            'lastname' => isset($input['lastname']) ? trim($input['lastname']) : null,
-            'email' => isset($input['email']) ? strtolower(trim($input['email'])) : null,
-            'phone' => $input['phone'] ?? null,
-            'mobile' => $input['mobile'] ?? null,
-            'title' => $input['title'] ?? null,
-            'department' => $input['department'] ?? null,
-            'accountid' => isset($input['accountid']) ? (int) $input['accountid'] : null,
-            'description' => $input['description'] ?? null,
-            'mailingstreet' => $input['mailingstreet'] ?? null,
-            'mailingcity' => $input['mailingcity'] ?? null,
-            'mailingstate' => $input['mailingstate'] ?? null,
-            'mailingcountry' => $input['mailingcountry'] ?? null,
-            'mailingzip' => $input['mailingzip'] ?? null,
-            'otherphone' => $input['otherphone'] ?? null,
-            'fax' => $input['fax'] ?? null,
-            'secondaryemail' => isset($input['secondaryemail']) ? strtolower(trim($input['secondaryemail'])) : null,
-            'assistant' => $input['assistant'] ?? null,
-            'birthdate' => $input['birthdate'] ?? null,
-            'reports_to_id' => isset($input['reports_to_id']) ? (int) $input['reports_to_id'] : null,
-            'leadsource' => $input['leadsource'] ?? null,
-            'contact_status' => $input['contact_status'] ?? null,
-        ], fn($value) => $value !== null && $value !== '');
-    }
+    
 }

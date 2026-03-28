@@ -32,7 +32,8 @@ interface ActivityLogRepositoryInterface
      * @return ActivityLogListDTO
      */
     public function getRecentActivitiesWithFilters(
-        int $limit = 50,
+        int $limit = 20,
+        int $offset = 0,
         ?string $entityType = null,
         ?string $action = null,
         ?int $userId = null,

@@ -10,7 +10,41 @@ use App\Domain\Entities\Contact;
 class ContactMapper
 {
     /**
-     * Map database row to Contact entity
+     * Fields that belong to vtiger_contactdetails
+     */
+    private const CONTACT_DETAILS_FIELDS = [
+        'firstname',
+        'lastname',
+        'email',
+        'phone',
+        'mobile',
+        'title',
+        'department',
+        'accountid',
+        'salutation',
+        'fax',
+        'reportsto',
+        'training',
+        'usertype',
+        'contacttype',
+        'otheremail',
+        'secondaryemail',
+        'donotcall',
+        'emailoptout',
+        'imagename',
+        'reference',
+        'notify_owner',
+        'isconvertedfromlead',
+        'tags'
+    ];
+
+    /**
+     * Fields that belong to vtiger_crmentity
+     */
+    private const CRMENTITY_FIELDS = ['description', 'smownerid'];
+
+    /**
+     * Map database row to Contact entity (for reading)
      */
     public static function fromDatabaseRow(object $row): Contact
     {
@@ -25,37 +59,19 @@ class ContactMapper
             'title' => $row->title ?? null,
             'department' => $row->department ?? null,
             'accountid' => (int) ($row->accountid ?? 0),
-            
-            // Denormalized fields from vtiger_account (via JOIN)
             'accountname' => $row->accountname ?? null,
-            
-            // Fields from vtiger_crmentity
             'assigned_user_id' => (int) ($row->smownerid ?? 0),
             'assigned_user_name' => $row->user_name ?? null,
             'description' => $row->description ?? null,
             'createdtime' => $row->createdtime ?? null,
             'modifiedtime' => $row->modifiedtime ?? null,
             'deleted' => (int) ($row->deleted ?? 0),
-            
-            // Additional fields from vtiger_contactdetails
-            'mailingstreet' => $row->mailingstreet ?? null,
-            'mailingcity' => $row->mailingcity ?? null,
-            'mailingstate' => $row->mailingstate ?? null,
-            'mailingcountry' => $row->mailingcountry ?? null,
-            'mailingzip' => $row->mailingzip ?? null,
-            'otherphone' => $row->otherphone ?? null,
-            'fax' => $row->fax ?? null,
-            'secondaryemail' => $row->secondaryemail ?? null,
-            'assistant' => $row->assistant ?? null,
-            'birthdate' => $row->birthdate ?? null,
-            'reports_to_id' => isset($row->reports_to_id) ? (int) $row->reports_to_id : null,
-            'leadsource' => $row->leadsource ?? null,
-            'contact_status' => $row->contact_status ?? 'Active',
+            // ... remaining fields ...
         ]);
     }
 
     /**
-     * Prepare data for insertion into Vtiger
+     * Prepare data for INSERT into Vtiger (for creation)
      */
     public static function toPersistence(array $contactData, int $createdByUserId): array
     {
@@ -68,29 +84,72 @@ class ContactMapper
             'createdtime' => now()->format('Y-m-d H:i:s'),
             'modifiedtime' => now()->format('Y-m-d H:i:s'),
             'deleted' => 0,
-            
             // For vtiger_contactdetails
-            'accountid' => (int) $contactData['accountid'],
-            'firstname' => trim($contactData['firstname']),
-            'lastname' => trim($contactData['lastname']),
-            'email' => strtolower(trim($contactData['email'])),
+            'accountid' => isset($contactData['accountid']) ? (int) $contactData['accountid'] : null,
+            'firstname' => isset($contactData['firstname']) ? trim($contactData['firstname']) : null,
+            'lastname' => isset($contactData['lastname']) ? trim($contactData['lastname']) : null,
+            'email' => isset($contactData['email']) && $contactData['email'] ? strtolower(trim($contactData['email'])) : null,
             'phone' => $contactData['phone'] ?? null,
             'mobile' => $contactData['mobile'] ?? null,
             'title' => $contactData['title'] ?? null,
             'department' => $contactData['department'] ?? null,
-            'mailingstreet' => $contactData['mailingstreet'] ?? null,
-            'mailingcity' => $contactData['mailingcity'] ?? null,
-            'mailingstate' => $contactData['mailingstate'] ?? null,
-            'mailingcountry' => $contactData['mailingcountry'] ?? null,
-            'mailingzip' => $contactData['mailingzip'] ?? null,
-            'otherphone' => $contactData['otherphone'] ?? null,
-            'fax' => $contactData['fax'] ?? null,
-            'secondaryemail' => $contactData['secondaryemail'] ?? null,
-            'assistant' => $contactData['assistant'] ?? null,
-            'birthdate' => $contactData['birthdate'] ?? null,
-            'reports_to_id' => $contactData['reports_to_id'] ?? null,
-            'leadsource' => $contactData['leadsource'] ?? null,
-            'contact_status' => $contactData['contact_status'] ?? 'Active',
+            // ... remaining fields ...
         ];
+    }
+
+    /**
+     * Prepare data for UPDATE, grouped by table
+     * 
+     * @param array $contactData Raw input data from request/use case
+     * @param int|null $assignedUserId Optional: new assigned user ID (for smownerid)
+     * @return array{contactdetails: array, crmentity: array} Fields grouped by target table
+     */
+    public static function toPersistenceUpdate(array $contactData, ?int $assignedUserId = null): array
+    {
+        // Filter and prepare fields for vtiger_contactdetails
+        $contactDetailsData = array_filter(
+            array_intersect_key($contactData, array_flip(self::CONTACT_DETAILS_FIELDS)),
+            fn($v) => $v !== null && $v !== ''
+        );
+
+        // Filter and prepare fields for vtiger_crmentity
+        $crmentityData = array_filter(
+            array_intersect_key($contactData, array_flip(self::CRMENTITY_FIELDS)),
+            fn($v) => $v !== null && $v !== ''
+        );
+
+        // Always update modifiedtime
+        $crmentityData['modifiedtime'] = now()->format('Y-m-d H:i:s');
+
+        // Handle assigned_user_id → smownerid in crmentity
+        if ($assignedUserId !== null) {
+            $crmentityData['smownerid'] = $assignedUserId;
+        }
+
+        return [
+            'contactdetails' => $contactDetailsData,
+            'crmentity' => $crmentityData,
+        ];
+    }
+
+    /**
+     * Helper: Get list of valid fields for validation
+     */
+    public static function getValidFields(): array
+    {
+        return array_merge(self::CONTACT_DETAILS_FIELDS, self::CRMENTITY_FIELDS);
+    }
+
+    public static function toContactDetailsArray(array $contactData, int $contactId): array
+    {
+        $baseData = array_filter(
+            array_intersect_key($contactData, array_flip(self::CONTACT_DETAILS_FIELDS)),
+            fn($v) => $v !== null && $v !== ''
+        );
+
+
+        return array_merge([
+            'contact_no' => 'CON' . str_pad($contactId, 5, '0', STR_PAD_LEFT),
+        ], $baseData);
     }
 }

@@ -76,7 +76,8 @@ class VtigerActivityLogRepository implements ActivityLogRepositoryInterface
      * Get recent activities with advanced filters
      */
     public function getRecentActivitiesWithFilters(
-        int $limit = 50,
+        int $limit = 20,
+        int $offset = 0,
         ?string $entityType = null,
         ?string $action = null,
         ?int $userId = null,
@@ -142,6 +143,7 @@ class VtigerActivityLogRepository implements ActivityLogRepositoryInterface
         }
 
         $records = $query->orderBy('vtiger_modtracker_basic.changedon', 'desc')
+            ->offset($offset)
             ->limit($limit)
             ->get();
 

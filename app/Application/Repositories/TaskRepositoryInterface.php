@@ -3,6 +3,7 @@
 namespace App\Application\Repositories;
 
 use App\Application\DTOs\Task\CreateTaskRequest;
+use App\Application\DTOs\Task\UpdateTaskData;
 use App\Application\DTOs\Task\UpdateTaskRequest;
 use App\Application\DTOs\Task\UpdateTaskStatusRequest;
 use App\Domain\Entities\Task;
@@ -282,51 +283,17 @@ interface TaskRepositoryInterface
      * Updates task fields with audit trail support. Only fields provided
      * in the update data array are modified (partial update support).
      * 
-     * Updatable fields:
-     * - subject: Task title/summary
-     * - date_start, due_date: Task dates
-     * - time_start, time_end: Task times
-     * - status: Current status
-     * - priority: Priority level
-     * - location: Physical/virtual location
-     * - description: Detailed description
-     * - related_record_id, related_module_type: Related record references
-     * - send_notification: Notification preference
+      * Updates an existing task using the UpdateTaskData DTO.
+     * Separates updates by table (vtiger_activity, vtiger_crmentity).
      * 
-     * Non-updatable fields (immutable after creation):
-     * - activityid, activitytype, assignedUserId, createdByUserId, createdtime
+     * @param int $taskId Task ID to update
+     * @param UpdateTaskData $data DTO with filtered update data
+     * @return bool True if update was successful
      * 
-     * @param int $taskId Unique identifier of the task to update
-     * @param array<string, mixed> $data Associative array with fields to update
-     *        Supported keys: 'subject', 'date_start', 'due_date', 'time_start',
-     *        'time_end', 'status', 'priority', 'location', 'description',
-     *        'related_record_id', 'related_module_type', 'send_notification',
-     *        'modified_by', 'modified_time'
-     * 
-     * @return bool True if update was successful, false if task not found or no changes made
-     * 
-     * @throws \RuntimeException If database transaction fails
-     * @throws \InvalidArgumentException If taskId is invalid or data contains invalid keys
-     * @throws \DomainException If user is not authorized to update this task
-     * 
-     * @example
-     * // Update task subject and description
-     * $success = $repository->update(456, [
-     *     'subject' => 'Updated task title',
-     *     'description' => 'Updated description',
-     *     'modified_by' => 123,
-     *     'modified_time' => '2026-02-27 14:30:00',
-     * ]);
-     * 
-     * @example
-     * // Update task status to completed
-     * $success = $repository->update(456, [
-     *     'status' => 'Completed',
-     *     'modified_by' => 123,
-     *     'modified_time' => now()->format('Y-m-d H:i:s'),
-     * ]);
+     * @throws InvalidArgumentException If taskId is invalid
+     * @throws RuntimeException If database update fails
      */
-    public function update(int $taskId, array $data): bool;
+    public function update(int $taskId, UpdateTaskData $data): bool;
 
     /**
      * Update task status (shortcut method)

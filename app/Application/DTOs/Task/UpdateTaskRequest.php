@@ -15,6 +15,7 @@ namespace App\Application\DTOs\Task;
  * - Dates must be valid and logically consistent (due_date >= date_start)
  * - Priority must be one of: Low, Medium, High
  * - Status must be one of: Not Started, In Progress, Completed, Pending Input, Planned
+ * - Assigned user ID must reference a valid, active user if provided
  * 
  * @package App\Application\DTOs
  * @author Bolivar Delgado <bolivar.delgado@gmail.com>
@@ -22,126 +23,16 @@ namespace App\Application\DTOs\Task;
  * 
  * @see \App\Application\UseCases\Task\UpdateTaskUseCase
  * @see \App\Domain\Entities\Task
+ * @see \App\Application\DTOs\Task\UpdateTaskData
  */
 class UpdateTaskRequest
 {
     /**
-     * New task subject/title (optional)
-     * 
-     * Maximum: 255 characters
-     * 
-     * @var string|null
-     */
-    public readonly ?string $subject;
-
-    /**
-     * New start date (optional)
-     * 
-     * Format: YYYY-MM-DD
-     * 
-     * @var string|null
-     */
-    public readonly ?string $dateStart;
-
-    /**
-     * New due date (optional)
-     * 
-     * Format: YYYY-MM-DD
-     * Must be >= date_start if both are provided
-     * 
-     * @var string|null
-     */
-    public readonly ?string $dueDate;
-
-    /**
-     * New start time (optional)
-     * 
-     * Format: HH:MM (24-hour format)
-     * 
-     * @var string|null
-     */
-    public readonly ?string $timeStart;
-
-    /**
-     * New end time (optional)
-     * 
-     * Format: HH:MM (24-hour format)
-     * Must be >= time_start if both are provided
-     * 
-     * @var string|null
-     */
-    public readonly ?string $timeEnd;
-
-    /**
-     * New priority level (optional)
-     * 
-     * Values: Low, Medium, High
-     * 
-     * @var string|null
-     */
-    public readonly ?string $priority;
-
-    /**
-     * New status (optional)
-     * 
-     * Values: Not Started, In Progress, Completed, Pending Input, Planned
-     * 
-     * @var string|null
-     */
-    public readonly ?string $status;
-
-    /**
-     * New location (optional)
-     * 
-     * Maximum: 150 characters
-     * 
-     * @var string|null
-     */
-    public readonly ?string $location;
-
-    /**
-     * New description (optional)
-     * 
-     * No length limit (TEXT field)
-     * 
-     * @var string|null
-     */
-    public readonly ?string $description;
-
-    /**
-     * New related record ID (optional)
-     * 
-     * References another CRM entity (project, quote, account, etc.)
-     * 
-     * @var int|null
-     */
-    public readonly ?int $relatedRecordId;
-
-    /**
-     * New related module type (optional)
-     * 
-     * Examples: Project, Quotes, Accounts, Potentials
-     * Maximum: 50 characters
-     * 
-     * @var string|null
-     */
-    public readonly ?string $relatedModuleType;
-
-    /**
-     * Send notification to assignee (optional)
-     * 
-     * @var bool|null
-     */
-    public readonly ?bool $sendNotification;
-
-    /**
-     * Constructor for UpdateTaskRequest
-     * 
      * @param string|null $subject New task subject (optional)
-     * @param string|null $dateStart New start date (optional)
-     * @param string|null $dueDate New due date (optional)
-     * @param string|null $timeStart New start time (optional)
-     * @param string|null $timeEnd New end time (optional)
+     * @param string|null $dateStart New start date in YYYY-MM-DD format (optional)
+     * @param string|null $dueDate New due date in YYYY-MM-DD format (optional) ⭐ IMPORTANTE
+     * @param string|null $timeStart New start time in HH:MM format (optional)
+     * @param string|null $timeEnd New end time in HH:MM format (optional)
      * @param string|null $priority New priority level (optional)
      * @param string|null $status New status (optional)
      * @param string|null $location New location (optional)
@@ -149,95 +40,46 @@ class UpdateTaskRequest
      * @param int|null $relatedRecordId New related record ID (optional)
      * @param string|null $relatedModuleType New related module type (optional)
      * @param bool|null $sendNotification Send notification flag (optional)
-     * 
-     * @throws \InvalidArgumentException If no fields are provided or validation fails
+     * @param int|null $assignedUserId New assigned user ID (optional)
+     * @param string|null $durationHours Duration in hours (optional)
+     * @param string|null $durationMinutes Duration in minutes (optional)
      */
     public function __construct(
-        ?string $subject = null,
-        ?string $dateStart = null,
-        ?string $dueDate = null,
-        ?string $timeStart = null,
-        ?string $timeEnd = null,
-        ?string $priority = null,
-        ?string $status = null,
-        ?string $location = null,
-        ?string $description = null,
-        ?int $relatedRecordId = null,
-        ?string $relatedModuleType = null,
-        ?bool $sendNotification = null,
+        public readonly ?string $subject = null,
+        public readonly ?string $dateStart = null,
+        public readonly ?string $dueDate = null,      
+        public readonly ?string $timeStart = null,
+        public readonly ?string $timeEnd = null,
+        public readonly ?string $priority = null,
+        public readonly ?string $status = null,
+        public readonly ?string $location = null,
+        public readonly ?string $description = null,
+        public readonly ?int $relatedRecordId = null,
+        public readonly ?string $relatedModuleType = null,
+        public readonly ?bool $sendNotification = null,
+        public readonly ?int $assignedUserId = null,
+        public readonly ?string $durationHours = null,
+        public readonly ?string $durationMinutes = null,
     ) {
-        // Validate that at least one field is provided for update
-        if (
-            $subject === null && $dateStart === null && $dueDate === null &&
-            $timeStart === null && $timeEnd === null && $priority === null &&
-            $status === null && $location === null && $description === null &&
-            $relatedRecordId === null && $relatedModuleType === null &&
-            $sendNotification === null
-        ) {
-            throw new \InvalidArgumentException('At least one field must be provided for task update');
+        // Optional: Add validation here if needed
+        if ($this->subject !== null && strlen(trim($this->subject)) > 255) {
+            throw new \InvalidArgumentException('Subject cannot exceed 255 characters');
         }
-
-        // Validate subject length if provided
-        if ($subject !== null && strlen(trim($subject)) > 255) {
-            throw new \InvalidArgumentException('Task subject cannot exceed 255 characters');
-        }
-
-        // Validate date consistency if both provided
-        if ($dateStart !== null && $dueDate !== null) {
-            if (strtotime($dueDate) < strtotime($dateStart)) {
-                throw new \InvalidArgumentException('Due date cannot be before start date');
-            }
-        }
-
-        // Validate time consistency if both provided
-        if ($timeStart !== null && $timeEnd !== null) {
-            if ($timeEnd <= $timeStart) {
-                throw new \InvalidArgumentException('End time must be after start time');
-            }
-        }
-
-        // Validate priority if provided
-        if ($priority !== null && !in_array($priority, ['Low', 'Medium', 'High'], true)) {
-            throw new \InvalidArgumentException('Priority must be one of: Low, Medium, High');
-        }
-
-        // Validate status if provided
-        $validStatuses = ['Not Started', 'In Progress', 'Completed', 'Pending Input', 'Planned'];
-        if ($status !== null && !in_array($status, $validStatuses, true)) {
-            throw new \InvalidArgumentException(
-                "Status must be one of: " . implode(', ', $validStatuses)
-            );
-        }
-
-        // Validate location length if provided
-        if ($location !== null && strlen(trim($location)) > 150) {
-            throw new \InvalidArgumentException('Location cannot exceed 150 characters');
-        }
-
-        // Validate related module type length if provided
-        if ($relatedModuleType !== null && strlen(trim($relatedModuleType)) > 50) {
-            throw new \InvalidArgumentException('Related module type cannot exceed 50 characters');
-        }
-
-        // Assign validated values
-        $this->subject = $subject !== null ? trim($subject) : null;
-        $this->dateStart = $dateStart;
-        $this->dueDate = $dueDate;
-        $this->timeStart = $timeStart;
-        $this->timeEnd = $timeEnd;
-        $this->priority = $priority;
-        $this->status = $status;
-        $this->location = $location !== null ? trim($location) : null;
-        $this->description = $description;
-        $this->relatedRecordId = $relatedRecordId;
-        $this->relatedModuleType = $relatedModuleType !== null ? trim($relatedModuleType) : null;
-        $this->sendNotification = $sendNotification;
     }
+
+    
 
     /**
      * Convert to array for repository layer
      * 
+     * Maps camelCase properties to snake_case database columns.
+     * 
      * @return array<string, mixed> Associative array with fields to update
+     * 
+     * @example
+     * $request = new UpdateTaskRequest(subject: 'New title', status: 'Completed');
+     * $array = $request->toUpdateArray();
+     * // Returns: ['subject' => 'New title', 'status' => 'Completed']
      */
     public function toUpdateArray(): array
     {
@@ -277,10 +119,51 @@ class UpdateTaskRequest
             $data['related_module_type'] = $this->relatedModuleType;
         }
         if ($this->sendNotification !== null) {
-            $data['send_notification'] = $this->sendNotification;
+            $data['send_notification'] = $this->sendNotification ? '1' : '0';
+        }
+        if ($this->assignedUserId !== null) {
+            $data['assigned_user_id'] = $this->assignedUserId;
+        }
+        if ($this->durationHours !== null) {
+            $data['duration_hours'] = $this->durationHours;
+        }
+        if ($this->durationMinutes !== null) {
+            $data['duration_minutes'] = $this->durationMinutes;
         }
         
         return $data;
+    }
+
+    /**
+     * Convert to associative array for general processing
+     * 
+     * Returns only non-null values with camelCase keys.
+     * 
+     * @return array<string, mixed> Array with non-null values
+     */
+    public function toArray(): array
+    {
+        return array_filter(get_object_vars($this), fn($v) => $v !== null);
+    }
+
+    // ========================================================================
+    // HELPER METHODS FOR CONDITIONAL UPDATES
+    // ========================================================================
+
+    /**
+     * Check if a specific field is set and not null
+     * 
+     * @param string $field Field name to check (camelCase property name)
+     * @return bool True if field exists and is not null
+     * 
+     * @example
+     * if ($request->hasField('status')) {
+     *     // Status is being updated
+     * }
+     */
+    public function hasField(string $field): bool
+    {
+        return property_exists($this, $field) && $this->$field !== null;
     }
 
     /**
@@ -297,5 +180,29 @@ class UpdateTaskRequest
     public function shouldUpdateDates(): bool
     {
         return $this->dateStart !== null || $this->dueDate !== null;
+    }
+
+    /**
+     * Check if assigned user should be updated
+     */
+    public function shouldUpdateAssignedUser(): bool
+    {
+        return $this->assignedUserId !== null;
+    }
+
+    /**
+     * Check if duration fields should be updated
+     */
+    public function shouldUpdateDuration(): bool
+    {
+        return $this->durationHours !== null || $this->durationMinutes !== null;
+    }
+
+    /**
+     * Check if notification preference should be updated
+     */
+    public function shouldUpdateNotification(): bool
+    {
+        return $this->sendNotification !== null;
     }
 }

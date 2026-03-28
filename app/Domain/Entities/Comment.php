@@ -179,6 +179,13 @@ class Comment
     private ?string $assigned_user_email;
 
     /**
+     * Módulo de la entidad relacionada (Project, Calendar, Accounts, etc.)
+     *
+     * @var string|null
+     */
+    private ?string $relatedModule = null;
+
+    /**
      * Constructor for Comment entity
      * 
      * Validates input data and initializes the entity state.
@@ -197,6 +204,7 @@ class Comment
      * @param string|null $modifiedtime Last modification timestamp (optional)
      * @param string|null $assigned_user_name Name of assigned user (optional)
      * @param string|null $assigned_user_email Email of assigned user (optional)
+     * @param string|null $relatedModule Module of related entity (optional)
      * 
      * @throws InvalidArgumentException If validation fails
      */
@@ -214,7 +222,8 @@ class Comment
         ?string $createdtime = null,
         ?string $modifiedtime = null,
         ?string $assigned_user_name = null,
-        ?string $assigned_user_email = null
+        ?string $assigned_user_email = null,
+        ?string $relatedModule = null
     ) {
         $this->validateCommentId($commentid);
         $this->validateContent($commentcontent);
@@ -234,6 +243,7 @@ class Comment
         $this->modifiedtime = $modifiedtime;
         $this->assigned_user_name = $assigned_user_name;
         $this->assigned_user_email = $assigned_user_email;
+        $this->relatedModule = $relatedModule;
     }
 
     // ========================================================================
@@ -328,6 +338,54 @@ class Comment
     public function getReasonToEdit(): ?string
     {
         return $this->reasontoedit;
+    }
+
+    /**
+     * Get the module of the related entity
+     *
+     * @return string|null Module name (Project, Calendar, Accounts, etc.)
+     */
+    public function getRelatedModule(): ?string
+    {
+        return $this->relatedModule;
+    }
+
+    /**
+     * Get the display name for the related entity type
+     *
+     * @return string Human-readable entity type name
+     */
+    public function getRelatedEntityType(): string
+    {
+        return match ($this->relatedModule) {
+            'Project' => 'Proyecto',
+            'Calendar', 'Tasks' => 'Tarea',
+            'Quotes' => 'Cotización',
+            'Accounts' => 'Cliente',
+            'Contacts' => 'Contacto',
+            'Potentials' => 'Oportunidad',
+            'HelpDesk' => 'Ticket',
+            default => 'Entidad',
+        };
+    }
+
+    /**
+     * Get the icon for the related entity type
+     *
+     * @return string Emoji icon
+     */
+    public function getRelatedEntityIcon(): string
+    {
+        return match ($this->relatedModule) {
+            'Project' => '📋',
+            'Calendar', 'Tasks' => '✓',
+            'Quotes' => '📄',
+            'Accounts' => '🏢',
+            'Contacts' => '👤',
+            'Potentials' => '💰',
+            'HelpDesk' => '🎫',
+            default => '🔗',
+        };
     }
 
     /**
@@ -512,7 +570,7 @@ class Comment
         }
 
         $this->validateContent($newContent);
-        
+
         $this->commentcontent = $newContent;
         $this->reasontoedit = $reason;
         $this->modifiedtime = date('Y-m-d H:i:s');
@@ -595,6 +653,10 @@ class Comment
         return [
             'id' => $this->commentid,
             'taskId' => $this->related_to,
+            'relatedToId' => $this->related_to,
+            'relatedModule' => $this->relatedModule,
+            'relatedEntityType' => $this->getRelatedEntityType(),
+            'relatedEntityIcon' => $this->getRelatedEntityIcon(),
             'content' => $this->commentcontent,
             'userId' => $this->userid,
             'userName' => $this->assigned_user_name,

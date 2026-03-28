@@ -114,6 +114,7 @@ class VtigerCommentRepository implements CommentRepositoryInterface
             ->table('vtiger_modcomments')
             ->join('vtiger_crmentity', 'vtiger_modcomments.modcommentsid', '=', 'vtiger_crmentity.crmid')
             ->leftJoin('vtiger_users', 'vtiger_modcomments.userid', '=', 'vtiger_users.id')
+            ->leftJoin('vtiger_crmentity as related_entity', 'vtiger_modcomments.related_to', '=', 'related_entity.crmid')
             ->where('vtiger_modcomments.related_to', $relatedId)
             ->where('vtiger_crmentity.deleted', 0)
             ->select(
@@ -130,10 +131,11 @@ class VtigerCommentRepository implements CommentRepositoryInterface
                 'vtiger_crmentity.createdtime',      // date created
                 'vtiger_crmentity.modifiedtime',     //date modified
                 'vtiger_crmentity.label',
+                'related_entity.setype as related_module', 
                 DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
                 DB::raw('vtiger_users.email1 as assigned_user_email')
             )
-            
+
             ->orderBy('vtiger_crmentity.createdtime', 'DESC')
             ->offset($offset)
             ->limit($perPage)
@@ -176,6 +178,7 @@ class VtigerCommentRepository implements CommentRepositoryInterface
             ->table('vtiger_modcomments')
             ->join('vtiger_crmentity', 'vtiger_modcomments.modcommentsid', '=', 'vtiger_crmentity.crmid')
             ->leftJoin('vtiger_users', 'vtiger_modcomments.userid', '=', 'vtiger_users.id')
+            ->leftJoin('vtiger_crmentity as related_entity', 'vtiger_modcomments.related_to', '=', 'related_entity.crmid')
             ->where('vtiger_modcomments.modcommentsid', $commentId)
             ->where('vtiger_crmentity.deleted', 0)
             ->select(
@@ -189,16 +192,24 @@ class VtigerCommentRepository implements CommentRepositoryInterface
                 'vtiger_modcomments.is_private',
                 'vtiger_modcomments.filename',
                 'vtiger_modcomments.related_email_id',
-                 'vtiger_crmentity.createdtime',
+                'vtiger_crmentity.createdtime',
                 'vtiger_crmentity.modifiedtime',
                 'vtiger_crmentity.label',
+                'related_entity.setype as related_module',
                 DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
                 DB::raw('vtiger_users.email1 as assigned_user_email')
             )
             ->first();
+        if (!$row) {
+            return null;
+        }
+
+        
+        $rowData = (array) $row;
+        $rowData['relatedModule'] = $row->related_module ?? null;
 
         // Map to entity if found, otherwise return null
-        return $row ? CommentMapper::fromDatabase((array) $row) : null;
+        return CommentMapper::fromDatabase($rowData);
     }
 
     /**

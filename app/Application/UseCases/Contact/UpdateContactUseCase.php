@@ -2,6 +2,7 @@
 
 namespace App\Application\UseCases\Contact;
 
+use App\Application\DTOs\Contact\ContactUpdateData;
 use App\Application\Repositories\ContactRepositoryInterface;
 use InvalidArgumentException;
 
@@ -14,95 +15,70 @@ class UpdateContactUseCase
     /**
      * Update an existing contact
      * 
-     * @param int $id ID of the contact to update
-     * @param array $contactData Data to update
+     * @param ContactUpdateData $data DTO with all required data
      * @return bool True if updated successfully
      * 
      * @throws InvalidArgumentException If the contact does not exist or the data is invalid
      */
-    public function execute(int $id, array $contactData): bool
+    public function execute(ContactUpdateData $data): bool
     {
         // Validate that the contact exists and is active
-        if (!$this->contactRepository->existsAndActive($id)) {
+        if (!$this->contactRepository->existsAndActive($data->contactId)) {
             throw new InvalidArgumentException('The contact does not exist or has been deleted');
         }
 
-        // Validate input data
-        $this->validateUpdateContactData($contactData, $id);
+        // Validate data only if there are changes
+        if ($data->hasChanges()) {
+            $this->validateUpdateContactData($data->contactDetails, $data->contactId);
+        } else {
+            // If no changes, return success without doing anything
+            return true;
+        }
 
-        // Prepare data with default values
-        $contactData = array_merge([
-            'modifiedtime' => now()->format('Y-m-d H:i:s'),
-        ], $contactData);
-
-        // Update contact
-        return $this->contactRepository->update($id, $contactData);
+        // Execute update in the repository
+        return $this->contactRepository->updateWithDto($data);
     }
 
     /**
-     * Validate data for updating a contact
+     * Validate update data
      * 
      * @throws InvalidArgumentException
      */
-    private function validateUpdateContactData(array $data, int $contactId): void
+    private function validateUpdateContactData(array $contactDetails, int $contactId): void
     {
-        // Only validate fields that are provided (partial update)
-        if (isset($data['firstname']) && empty(trim($data['firstname']))) {
-            throw new InvalidArgumentException('First name cannot be empty');
-        }
-        if (isset($data['lastname']) && empty(trim($data['lastname']))) {
+        // lastname is the only truly required field in Vtiger
+        if (isset($contactDetails['lastname']) && empty(trim($contactDetails['lastname']))) {
             throw new InvalidArgumentException('Last name cannot be empty');
         }
-        if (isset($data['email']) && !empty($data['email'])) {
-            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-                throw new InvalidArgumentException('Email has an invalid format');
+
+        // If email is provided, validate format
+        if (isset($contactDetails['email']) && !empty($contactDetails['email'])) {
+            if (!filter_var($contactDetails['email'], FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('Invalid email');
             }
-            $this->validateStringLength($data['email'], 255, 'Email');
+            if (strlen($contactDetails['email']) > 100) {
+                throw new InvalidArgumentException('Email cannot exceed 100 characters');
+            }
         }
 
-        // If account is being changed, validate it exists
-        if (isset($data['accountid']) && !empty($data['accountid'])) {
-            if (!is_numeric($data['accountid']) || (int) $data['accountid'] <= 0) {
+        // If accountid is changed, validate that the account exists
+        if (isset($contactDetails['accountid']) && $contactDetails['accountid'] !== null) {
+            if (!is_numeric($contactDetails['accountid']) || (int) $contactDetails['accountid'] <= 0) {
                 throw new InvalidArgumentException('Client ID must be a valid number');
             }
-            if (!$this->contactRepository->accountExists((int) $data['accountid'])) {
+            if (!$this->contactRepository->accountExists((int) $contactDetails['accountid'])) {
                 throw new InvalidArgumentException('The specified client does not exist');
             }
         }
 
-        // Validate lengths for optional fields
-        if (isset($data['firstname'])) {
-            $this->validateStringLength($data['firstname'], 100, 'First name');
-        }
-        if (isset($data['lastname'])) {
-            $this->validateStringLength($data['lastname'], 100, 'Last name');
-        }
-
         // Validate that contact does not report to itself
-        if (isset($data['reports_to_id']) && (int) $data['reports_to_id'] === $contactId) {
+        if (isset($contactDetails['reportsto']) && (string) $contactDetails['reportsto'] === (string) $contactId) {
             throw new InvalidArgumentException('A contact cannot report to itself');
         }
 
         // Validate status if provided
-        if (isset($data['contact_status']) && !in_array($data['contact_status'], ['Active', 'Inactive'])) {
+        if (isset($contactDetails['contacttype']) && !in_array($contactDetails['contacttype'], ['Active', 'Inactive'])) {
             throw new InvalidArgumentException('Contact status must be "Active" or "Inactive"');
-        }
-
-        // Validate birth date if provided
-        if (isset($data['birthdate']) && !empty($data['birthdate'])) {
-            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['birthdate'])) {
-                throw new InvalidArgumentException('Birth date must be in YYYY-MM-DD format');
-            }
-        }
-    }
-
-    /**
-     * Helper to validate string length
-     */
-    private function validateStringLength(?string $value, int $max, string $fieldName): void
-    {
-        if ($value !== null && strlen($value) > $max) {
-            throw new InvalidArgumentException("{$fieldName} cannot exceed {$max} characters");
         }
     }
 }

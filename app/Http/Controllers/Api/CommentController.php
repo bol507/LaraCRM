@@ -8,8 +8,10 @@ use App\Application\UseCases\Comment\CreateCommentUseCase;
 use App\Application\UseCases\Comment\GetCommentsByRelatedIdUseCase;
 use App\Application\UseCases\Comment\UpdateCommentUseCase;
 use App\Application\UseCases\Comment\DeleteCommentUseCase;
+use App\Application\UseCases\Comment\GetCommentUseCase;
 use App\Http\Controllers\Controller;
 use App\Infrastructure\Mappers\CommentMapper;
+use App\Services\CurrentUserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -74,23 +76,35 @@ class CommentController extends Controller
     private readonly ?DeleteCommentUseCase $deleteCommentUseCase;
 
     /**
+     * Get comment use case
+     * 
+     * @var GetCommentUseCase
+     */
+    private readonly GetCommentUseCase $getCommentUseCase;
+
+    /**
      * Constructor with dependency injection
      * 
      * @param GetCommentsByRelatedIdUseCase $getCommentsByRelatedIdUseCase Use case for listing comments
      * @param CreateCommentUseCase $createCommentUseCase Use case for creating comments
+     * @param GetCommentUseCase $getCommentUseCase Use case for retrieving a single comment
      * @param UpdateCommentUseCase|null $updateCommentUseCase Use case for updating comments (optional)
      * @param DeleteCommentUseCase|null $deleteCommentUseCase Use case for deleting comments (optional)
+     * 
      */
     public function __construct(
         GetCommentsByRelatedIdUseCase $getCommentsByRelatedIdUseCase,
         CreateCommentUseCase $createCommentUseCase,
+        GetCommentUseCase $getCommentUseCase,
         ?UpdateCommentUseCase $updateCommentUseCase = null,
         ?DeleteCommentUseCase $deleteCommentUseCase = null
+
     ) {
         $this->getCommentsByRelatedIdUseCase = $getCommentsByRelatedIdUseCase;
         $this->createCommentUseCase = $createCommentUseCase;
         $this->updateCommentUseCase = $updateCommentUseCase;
         $this->deleteCommentUseCase = $deleteCommentUseCase;
+        $this->getCommentUseCase = $getCommentUseCase;
     }
 
     /**
@@ -322,24 +336,31 @@ class CommentController extends Controller
      *   }
      * }
      */
-    public function show(int $commentId): JsonResponse
+    public function show(int $id): JsonResponse
     {
         try {
-            // TODO: Implement show method with repository or use case
-            // $comment = $this->commentRepository->findById($commentId);
-            // if (!$comment) {
-            //     return response()->json(['error' => 'Comment not found'], 404);
-            // }
-            // return response()->json(['data' => CommentDto::fromEntity($comment)->toArray()]);
+            $userId = CurrentUserService::idOr(1);
+            $comment = $this->getCommentUseCase->execute(
+                commentId: $id,
+                userId: $userId
+            );
 
-            return response()->json(['error' => 'Not implemented'], 501);
+
+            return response()->json($comment->toArray());
         } catch (InvalidArgumentException $e) {
-            //  Invalid comment ID (400 Bad Request)
-            return response()->json(['error' => $e->getMessage()], 400);
-        } catch (\Exception $e) {
-            //  Unexpected error (500 Internal Server Error)
+            // Invalid ID or unauthorized access
             return response()->json([
-                'error' => 'Failed to retrieve comment: ' . $e->getMessage()
+                'error' => $e->getMessage()
+            ], 400);
+        } catch (RuntimeException $e) {
+            // Comment not found
+            return response()->json([
+                'error' => $e->getMessage()
+            ], 404);
+        } catch (\Exception $e) {
+            // Unexpected error
+            return response()->json([
+                'error' => 'Error fetching comment: ' . $e->getMessage()
             ], 500);
         }
     }

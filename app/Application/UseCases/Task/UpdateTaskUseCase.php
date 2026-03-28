@@ -2,6 +2,7 @@
 
 namespace App\Application\UseCases\Task;
 
+use App\Application\DTOs\Task\UpdateTaskData;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\DTOs\Task\UpdateTaskRequest;
 use App\Domain\Entities\Task;
@@ -141,11 +142,6 @@ class UpdateTaskUseCase
     {
         $userId = $userId ?? CurrentUserService::idOr(1);
 
-        Log::debug('UpdateTaskUseCase::execute', [
-            'taskId' => $taskId,
-            'userId' => $userId,
-            'subject' => $request->subject ?? null,
-        ]);
         // Validate input parameters
         $this->validateParameters($taskId, $userId);
 
@@ -165,71 +161,36 @@ class UpdateTaskUseCase
         }
 
         // Business rule: Validate date consistency
-        if ($this->requestHasField($request, 'dateStart') || $this->requestHasField($request, 'dueDate')) {
+        if ($request->hasField('dateStart') || $request->hasField('dueDate')) {
             $this->validateDateConsistency($request, $task);
         }
 
-        // Prepare update data for the repository
-        $updateData = $request->toUpdateArray();
-        $updateData['modified_by'] = $userId;
-        $updateData['modified_time'] = now()->format('Y-m-d H:i:s');
+        // Convert request to UpdateTaskData DTO (separates fields by table)
+        $updateData = UpdateTaskData::fromRequest($taskId, $request, $userId);
 
-        // Update task in the repository
-        $updated = $this->repository->update($taskId, $updateData, $userId);
+        // Delegate persistence to repository (much simpler now)
+        $updated = $this->repository->update($taskId, $updateData);
 
         if (!$updated) {
             Log::error('Failed to update task in repository', ['taskId' => $taskId]);
-            throw new \Exception('Failed to update task');
+            throw new RuntimeException('Failed to update task');
         }
+
+        // Log activity (non-blocking)
         try {
-            // Synchronize vtiger_crmentity.label if the subject changed
-            // Check if subject field exists and is not empty
-            if ($this->requestHasField($request, 'subject') && !empty(trim($request->subject))) {
-                $affected = DB::connection('vtiger')
-                    ->table('vtiger_crmentity')
-                    ->where('crmid', $taskId)
-                    ->where('setype', 'Tasks')
-                    ->update([
-                        'label' => trim($request->subject),
-                        'modifiedtime' => now(),
-                    ]);
-                Log::debug('vtiger_crmentity.label updated', [
-                    'crmid' => $taskId,
-                    'setype' => 'Tasks',
-                    'label' =>  trim($request->subject),
-                    'affected' => $affected,
-                ]);
-            }
-        } catch (\Exception $e) {
-            // Do not throw exception to avoid breaking the main flow, but log it
-            Log::error('Failed to sync vtiger_crmentity.label', [
-                'taskId' => $taskId,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-        }
-        try {
-            // Register activity in vtiger_modtracker_basic
             VtigerActivityTracker::updated(
                 module: 'Calendar',
                 crmid: $taskId,
                 userId: $userId
             );
-            Log::info('Activity logged for task update', [
-                'taskId' => $taskId,
-                'module' => 'Calendar',
-                'userId' => $userId,
-            ]);
         } catch (\Exception $e) {
-            Log::error('Failed to log activity for task update', [
+            Log::error('Failed to log activity', [
                 'taskId' => $taskId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
-            // Do not rethrow to avoid breaking the main flow
-        }   
+        }
 
-        return $updated;
+        return true;
     }
 
     /**

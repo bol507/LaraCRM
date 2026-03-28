@@ -37,11 +37,7 @@ class Contact extends BaseModel
         'phone',
         'title',
         'department',
-        'reportsto',
         'description',
-        'mailingcity',
-        'mailingstate',
-        'mailingcountry',
     ];
 
     protected $casts = [

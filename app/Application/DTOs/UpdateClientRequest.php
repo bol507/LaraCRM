@@ -40,5 +40,8 @@ class UpdateClientRequest
         public readonly ?string $ship_code = null,
         public readonly ?string $ship_country = null,
         public readonly ?string $ship_pobox = null,
+
+        // Description (stored in vtiger_crmentity)
+        public readonly ?string $description = null,
     ) {}
 }

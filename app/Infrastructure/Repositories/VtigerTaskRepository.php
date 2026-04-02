@@ -8,6 +8,10 @@ use App\Application\DTOs\Task\UpdateTaskStatusRequest;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Domain\Entities\Task;
 use App\Infrastructure\Mappers\TaskMapper;
+use App\Infrastructure\Repositories\Core\ActivityRepository;
+use App\Infrastructure\Repositories\Core\CrmentityRepository;
+use App\Infrastructure\Repositories\Core\SeActivityRelRepository;
+use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
 use Illuminate\Support\Facades\DB;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\Log;
@@ -99,6 +103,15 @@ class VtigerTaskRepository implements TaskRepositoryInterface
         'Pending Input',
         'Planned',
     ];
+
+
+    public function __construct(
+        private readonly CrmentityRepository $crmentity,
+        private readonly ActivityRepository $activity,
+        private readonly SeActivityRelRepository $relations,
+        private readonly IdGeneratorRepository $idGenerator,
+        private readonly string $connection = 'vtiger'
+    ) {}
 
     /**
      * {@inheritDoc}
@@ -393,53 +406,18 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      * 
-     * Creates a new task with automatic ID generation using Vtiger's
-     * legacy pattern (MAX(id) + 1) with concurrency protection.
+     * Creates a new Task entity by orchestrating:
+     * 1. ID generation with application-level locking
+     * 2. Domain entity construction
+     * 3. Persistence mapping via TaskMapper
+     * 4. Insert into vtiger_crmentity (core entity metadata)
+     * 5. Insert into vtiger_activity (task-specific data)
+     * 6. Optional: Link to related CRM entity via vtiger_seactivityrel
      * 
-     * This method implements a retry mechanism to handle race conditions
-     * that may occur when multiple requests simultaneously attempt to
-     * create tasks. The workflow is:
+     * @param CreateTaskRequest $request DTO with task creation data
+     * @return int The newly created task ID (activityid)
      * 
-     * 1. Begin database transaction
-     * 2. Acquire exclusive lock on vtiger_activity table
-     * 3. Generate new ID using MAX(activityid) + 1
-     * 4. Insert task data into vtiger_activity
-     * 5. Insert metadata into vtiger_crmentity
-     * 6. Insert relationship record if applicable
-     * 7. Commit transaction and return new task ID
-     * 
-     * If a duplicate key error occurs (due to race condition), the
-     * operation is retried up to MAX_CREATE_RETRIES times with a
-     * brief delay between attempts.
-     * 
-     * @param CreateTaskRequest $request Validated task creation data
-     * @return int The unique identifier of the newly created task
-     * 
-     * @throws InvalidArgumentException If request data is invalid
-     * @throws RuntimeException If creation fails after all retry attempts
-     * @throws RuntimeException If database transaction fails
-     * 
-     * @example
-     * $request = new CreateTaskRequest(
-     *     subject: 'Review quarterly report',
-     *     activityType: 'Task',
-     *     dateStart: '2026-03-06',
-     *     assignedUserId: 5,
-     *     priority: 'High'
-     * );
-     * $taskId = $repository->create($request);
-     * 
-     * @example
-     * // Task with related record
-     * $request = new CreateTaskRequest(
-     *     subject: 'Follow up on quote',
-     *     activityType: 'Task',
-     *     dateStart: '2026-03-06',
-     *     assignedUserId: 5,
-     *     relatedRecordId: 123,
-     *     relatedModuleType: 'Quotes'
-     * );
-     * $taskId = $repository->create($request);
+     * @throws RuntimeException If creation fails after retries
      */
     public function create(CreateTaskRequest $request): int
     {
@@ -447,79 +425,39 @@ class VtigerTaskRepository implements TaskRepositoryInterface
 
         while ($attempt < self::MAX_CREATE_RETRIES) {
             try {
-                $connection = DB::connection('vtiger');
-                $lockName = self::TASK_ID_LOCK_NAME;
-
-                // Acquire application-level lock with 10 second timeout
-                $lockAcquired = $connection->selectOne(
-                    "SELECT GET_LOCK(?, ?) as acquired",
-                    [$lockName, 10]
+                // Generate unique ID with locking (delegated to core repo)
+                $activityId = $this->idGenerator->generateNextId(
+                    table: 'vtiger_activity',
+                    column: 'activityid',
+                    lockName: self::TASK_ID_LOCK_NAME
                 );
 
-                if (!$lockAcquired || $lockAcquired->acquired != 1) {
-                    throw new RuntimeException(
-                        "Failed to acquire lock for task ID generation after 10 seconds"
+                // Build domain entity from request
+                $task = $this->buildTaskEntity($activityId, $request);
+
+                // Map to Vtiger persistence format
+                $mapped = TaskMapper::toPersistence($task);
+
+                // Insert into core entity table (delegated)
+                $this->crmentity->insert($mapped['crmentity']);
+
+                // Insert into activity table (delegated)
+                $this->activity->insert($mapped['activity']);
+
+                // Create relationship if linked to another entity (delegated)
+                if ($request->relatedRecordId && $request->relatedModuleType) {
+                    $this->relations->link(
+                        activityId: $activityId,
+                        crmid: $request->relatedRecordId,
+                        setype: $request->relatedModuleType
                     );
                 }
 
-                try {
-                    // Generate new task ID using Vtiger legacy pattern
-                    $maxId = $connection->table('vtiger_activity')->max('activityid');
-                    $activityId = (int) ($maxId ?? 0) + 1;
-
-                    // Verify ID does not already exist (defense in depth)
-                    if ($this->idExists($activityId)) {
-                        $activityId = $this->findNextAvailableId();
-                    }
-
-                    $tempTask = new Task(
-                        id: $activityId,
-                        subject: $request->subject,
-                        activityType: $request->activityType,
-                        dateStart: new DateTimeImmutable($request->dateStart),
-                        dueDate: $request->dueDate ? new DateTimeImmutable($request->dueDate) : null,
-                        timeStart: $request->timeStart,
-                        timeEnd: $request->timeEnd,
-                        status: $request->status ?? 'Not Started',
-                        priority: $request->priority ?? 'Medium',
-                        location: $request->location,
-                        description: $request->description,
-                        assignedUserId: $request->assignedUserId,
-                        assignedUserName: null,
-                        assignedUserEmail: null,
-                        createdByUserId: $request->assignedUserId,
-                        createdAt: new DateTimeImmutable('now'),
-                        updatedAt: new DateTimeImmutable('now'),
-                        relatedRecordId: $request->relatedRecordId,
-                        relatedModuleType: $request->relatedModuleType,
-                        sendNotification: $request->sendNotification,
-                        durationHours: $request->durationHours,
-                        durationMinutes: $request->durationMinutes,
-                    );
-
-                    $mapped = TaskMapper::toPersistence($tempTask);
-
-                    $connection->table('vtiger_crmentity')->insert($mapped['crmentity']);
-
-                    $connection->table('vtiger_activity')->insert($mapped['activity']);
-
-                    // Insert relationship if task is linked to another CRM entity
-                    if ($request->relatedRecordId && $request->relatedModuleType) {
-                        $connection->table('vtiger_seactivityrel')->insert([
-                            'activityid' => $activityId,
-                            'crmid' => $request->relatedRecordId,
-                        ]);
-                    }
-
-                    return $activityId;
-                } finally {
-                    // Always release the lock, even if an exception occurs
-                    $connection->statement("SELECT RELEASE_LOCK(?)", [$lockName]);
-                }
+                return $activityId;
             } catch (\Illuminate\Database\QueryException $e) {
                 $attempt++;
 
-                // Check if error is due to duplicate primary key or foreign key
+                // Retry on constraint errors (duplicate/foreign key)
                 if ($attempt < self::MAX_CREATE_RETRIES && $this->isConstraintError($e)) {
                     usleep(self::RETRY_DELAY_MICROSECONDS);
                     continue;
@@ -530,16 +468,6 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                     previous: $e
                 );
             } catch (\Exception $e) {
-                // Ensure lock is released even on unexpected errors
-                try {
-                    DB::connection('vtiger')->statement(
-                        "SELECT RELEASE_LOCK(?)",
-                        [self::TASK_ID_LOCK_NAME]
-                    );
-                } catch (\Exception $releaseError) {
-                    error_log("Failed to release lock: " . $releaseError->getMessage());
-                }
-
                 throw new RuntimeException(
                     'Failed to create task: ' . $e->getMessage(),
                     previous: $e
@@ -554,13 +482,33 @@ class VtigerTaskRepository implements TaskRepositoryInterface
 
     /**
      * {@inheritDoc}
+     * 
+     * Updates a Task entity by orchestrating core repositories.
+     * 
+     * Business logic handled here:
+     * - Validation of task ID
+     * - Early return optimization if no changes
+     * - Label sync in crmentity when subject changes (Vtiger-specific requirement)
+     * 
+     * Data access delegated to:
+     * - ActivityRepository::update() for vtiger_activity
+     * - CrmentityRepository::update() for vtiger_crmentity
+     * 
+     * @param int $taskId The task ID to update
+     * @param UpdateTaskData $data DTO with updated fields
+     * @return bool True if update was successful
+     * 
+     * @throws InvalidArgumentException If task ID is invalid
+     * @throws RuntimeException If update fails
      */
     public function update(int $taskId, UpdateTaskData $data): bool
     {
+        // ✅ Validation (domain logic - stays here)
         if ($taskId <= 0) {
             throw new InvalidArgumentException("Task ID must be positive, got {$taskId}");
         }
 
+        // ✅ Debug logging (observability - stays here)
         Log::info('=== Task Update Debug ===', [
             'taskId' => $taskId,
             'activityData' => $data->getActivityData(),
@@ -568,54 +516,77 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             'due_date_value' => $data->getActivityData()['due_date'] ?? null,
         ]);
 
-        // Early return if no changes
+        // ✅ Early return optimization (performance - stays here)
         if (!$data->hasChanges()) {
+            Log::debug("Task {$taskId} update skipped: no changes detected");
             return true;
         }
 
         try {
-            $connection = DB::connection('vtiger');
+            $updated = false;
 
+            // ✅ Update vtiger_activity (delegated to core repo)
             if (!empty($data->getActivityData())) {
                 $activityData = $data->getActivityData();
-
-
+                
+                // Remove managed field to let repo handle timestamps
                 unset($activityData['modifiedtime']);
-
-                $affected = $connection->table('vtiger_activity')
-                    ->where('activityid', $taskId)
-                    ->update($activityData);
-
-                if ($affected === false) {
+                
+                $activityUpdated = $this->activity->update($taskId, $activityData);
+                
+                if (!$activityUpdated) {
                     throw new RuntimeException("Failed to update vtiger_activity for task {$taskId}");
                 }
+                
+                $updated = true;
             }
 
-            // Update vtiger_crmentity table
+            // ✅ Update vtiger_crmentity (delegated to core repo)
             if (!empty($data->getCrmentityData())) {
-                $affected = $connection->table('vtiger_crmentity')
-                    ->where('crmid', $taskId)
-                    ->update($data->getCrmentityData());
-
-                if ($affected === false) {
+                $crmentityUpdated = $this->crmentity->update($taskId, $data->getCrmentityData());
+                
+                if (!$crmentityUpdated) {
                     throw new RuntimeException("Failed to update vtiger_crmentity for task {$taskId}");
+                }
+                
+                $updated = true;
+            }
+
+            // ✅ Sync label in crmentity if subject changed (Vtiger-specific business logic)
+            // This stays here because it's domain knowledge about how Vtiger uses the label field
+            $subjectForLabel = $data->getSubjectForLabelSync();
+            if ($subjectForLabel !== null) {
+                $labelSynced = $this->crmentity->updateLabel($taskId, trim($subjectForLabel));
+                
+                if (!$labelSynced) {
+                    Log::warning("Failed to sync label for task {$taskId}", [
+                        'subject' => $subjectForLabel,
+                    ]);
                 }
             }
 
-            // Sync label in vtiger_crmentity if subject changed
-            $subjectForLabel = $data->getSubjectForLabelSync();
-            if ($subjectForLabel !== null) {
-                $connection->table('vtiger_crmentity')
-                    ->where('crmid', $taskId)
-                    ->where('setype', 'Calendar')
-                    ->update([
-                        'label' => trim($subjectForLabel),
-                        'modifiedtime' => now()->format('Y-m-d H:i:s'),
-                    ]);
+            // Log success for audit trail
+            if ($updated) {
+                Log::info("Task {$taskId} updated successfully", [
+                    'task_id' => $taskId,
+                    'updated_by' => $data->getAuthenticatedUserId() ?? 'system',
+                    'timestamp' => now()->toDateTimeString(),
+                ]);
             }
 
             return true;
+            
+        } catch (InvalidArgumentException $e) {
+            // Re-throw validation errors as-is
+            throw $e;
+            
         } catch (\Exception $e) {
+            Log::error("Failed to update task {$taskId}: " . $e->getMessage(), [
+                'task_id' => $taskId,
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
             throw new RuntimeException(
                 "Failed to update task {$taskId}: " . $e->getMessage(),
                 previous: $e
@@ -1226,5 +1197,36 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                 'url' => "/dashboard/tasks/{$item->id}",
             ])
             ->toArray();
+    }
+
+    /**
+     * Build Task domain entity from request data
+     */
+    private function buildTaskEntity(int $id, CreateTaskRequest $request): Task
+    {
+        return new Task(
+            id: $id,
+            subject: $request->subject,
+            activityType: $request->activityType,
+            dateStart: new DateTimeImmutable($request->dateStart),
+            dueDate: $request->dueDate ? new DateTimeImmutable($request->dueDate) : null,
+            timeStart: $request->timeStart,
+            timeEnd: $request->timeEnd,
+            status: $request->status ?? 'Not Started',
+            priority: $request->priority ?? 'Medium',
+            location: $request->location,
+            description: $request->description,
+            assignedUserId: $request->assignedUserId,
+            assignedUserName: null,
+            assignedUserEmail: null,
+            createdByUserId: $request->assignedUserId,
+            createdAt: new DateTimeImmutable('now'),
+            updatedAt: new DateTimeImmutable('now'),
+            relatedRecordId: $request->relatedRecordId,
+            relatedModuleType: $request->relatedModuleType,
+            sendNotification: $request->sendNotification,
+            durationHours: $request->durationHours,
+            durationMinutes: $request->durationMinutes,
+        );
     }
 }

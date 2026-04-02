@@ -109,7 +109,8 @@ class Project
         public readonly ?string $description,
         public readonly ?string $createdtime,
         public readonly ?string $modifiedtime,
-        public readonly ?string $lastActivity = null
+        public readonly ?string $lastActivity = null,
+        public readonly ?string $lastActivityRaw = null
     
     ) {}
 

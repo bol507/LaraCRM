@@ -4,7 +4,6 @@ namespace App\Providers;
 
 use App\Application\Repositories\ActivityLogRepositoryInterface;
 use App\Application\Repositories\AttachmentRepositoryInterface;
-use Illuminate\Support\ServiceProvider;
 use App\Application\Repositories\ClientRepositoryInterface;
 use App\Application\Repositories\CommentRepositoryInterface;
 use App\Application\Repositories\ContactRepositoryInterface;
@@ -15,19 +14,30 @@ use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
+use App\Application\UseCases\Core\Activity\CreateTaskActivityUseCase;
+use App\Application\UseCases\Core\Activity\UpdateTaskActivityUseCase;
+use App\Application\UseCases\Core\Entity\CreateEntityUseCase;
+use App\Application\UseCases\Core\Entity\UpdateEntityUseCase;
+use App\Infrastructure\Repositories\AccountRepository;
+use App\Infrastructure\Repositories\BillingAddressRepository;
+use App\Infrastructure\Repositories\CommentRepository;
+use App\Infrastructure\Repositories\ContactRepository;
+use App\Infrastructure\Repositories\Core\ActivityRepository;
+use App\Infrastructure\Repositories\Core\CrmentityRepository;
+use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
+use App\Infrastructure\Repositories\Core\SeActivityRelRepository;
+use App\Infrastructure\Repositories\PotentialRepository;
+use App\Infrastructure\Repositories\ProjectRepository;
+use App\Infrastructure\Repositories\QuoteRepository;
+use App\Infrastructure\Repositories\ShippingAddressRepository;
 use App\Infrastructure\Repositories\VtigerActivityLogRepository;
 use App\Infrastructure\Repositories\VtigerAttachmentRepository;
-use App\Infrastructure\Repositories\VtigerClientRepository;
-use App\Infrastructure\Repositories\VtigerCommentRepository;
-use App\Infrastructure\Repositories\VtigerContactRepository;
 use App\Infrastructure\Repositories\VtigerDashboardRepository;
 use App\Infrastructure\Repositories\VtigerGeneralConditionsRepository;
-use App\Infrastructure\Repositories\VtigerOpportunityRepository;
-use App\Infrastructure\Repositories\VtigerProjectRepository;
-use App\Infrastructure\Repositories\VtigerQuoteRepository;
 use App\Infrastructure\Repositories\VtigerTaskRepository;
 use App\Infrastructure\Repositories\VtigerUserRepository;
 use App\Services\JwtService;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -36,12 +46,34 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-         $this->app->singleton(JwtService::class, function ($app) {
-            return new JwtService();
+        $this->app->singleton(JwtService::class, function ($app) {
+            return new JwtService;
         });
+
+        // Core repositories (singleton - shared across all use cases)
+        $this->app->singleton(CrmentityRepository::class);
+        $this->app->singleton(ActivityRepository::class);
+        $this->app->singleton(SeActivityRelRepository::class);
+        $this->app->singleton(IdGeneratorRepository::class);
+
+        // Generic UseCases (singleton - reused by all module-specific UseCases)
+        $this->app->singleton(CreateEntityUseCase::class);
+        $this->app->singleton(UpdateEntityUseCase::class);
+        $this->app->singleton(CreateTaskActivityUseCase::class);
+        $this->app->singleton(UpdateTaskActivityUseCase::class);
+
+        // Module-specific repositories (singleton)
+        $this->app->singleton(AccountRepository::class);
+        $this->app->singleton(BillingAddressRepository::class);
+        $this->app->singleton(ShippingAddressRepository::class);
+        $this->app->singleton(ContactRepository::class);
+        $this->app->singleton(PotentialRepository::class);
+        $this->app->singleton(QuoteRepository::class);
+        $this->app->singleton(ProjectRepository::class);
+        $this->app->singleton(CommentRepository::class);
+
         $this->registerRepositories();
-        
-       
+
     }
 
     /**
@@ -54,40 +86,40 @@ class AppServiceProvider extends ServiceProvider
 
     private function registerRepositories(): void
     {
-        // Clients
+        // Clients - use new AccountRepository (implements ClientRepositoryInterface)
         $this->app->bind(
             ClientRepositoryInterface::class,
-            VtigerClientRepository::class
+            AccountRepository::class
         );
         // Users
         $this->app->bind(
             UserRepositoryInterface::class,
             VtigerUserRepository::class
         );
-        // Opportunities
+        // Opportunities - use new PotentialRepository (implements OpportunityRepositoryInterface)
         $this->app->bind(
             OpportunityRepositoryInterface::class,
-            VtigerOpportunityRepository::class
+            PotentialRepository::class
         );
-        // Quotes
+        // Quotes - use new QuoteRepository (implements QuoteRepositoryInterface)
         $this->app->bind(
             QuoteRepositoryInterface::class,
-            VtigerQuoteRepository::class
+            QuoteRepository::class
         );
         // General conditions
         $this->app->bind(
             GeneralConditionsRepositoryInterface::class,
             VtigerGeneralConditionsRepository::class
         );
-        // Projects
+        // Projects - use new ProjectRepository (implements ProjectRepositoryInterface)
         $this->app->bind(
             ProjectRepositoryInterface::class,
-            VtigerProjectRepository::class
+            ProjectRepository::class
         );
-        // Comments
+        // Comments - use new CommentRepository (implements CommentRepositoryInterface)
         $this->app->bind(
             CommentRepositoryInterface::class,
-            VtigerCommentRepository::class
+            CommentRepository::class
         );
         // Attachments
         $this->app->bind(
@@ -104,10 +136,10 @@ class AppServiceProvider extends ServiceProvider
             DashboardRepositoryInterface::class,
             VtigerDashboardRepository::class
         );
-        // Contacts
+        // Contacts - use new ContactRepository (implements ContactRepositoryInterface)
         $this->app->bind(
             ContactRepositoryInterface::class,
-            VtigerContactRepository::class
+            ContactRepository::class
         );
         // Activities
         $this->app->bind(

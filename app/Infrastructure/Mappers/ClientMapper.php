@@ -3,36 +3,35 @@
 namespace App\Infrastructure\Mappers;
 
 use App\Domain\Entities\Client;
+use App\Infrastructure\Repositories\VtigerClientRepository;
 use InvalidArgumentException;
 
 /**
  * Client Mapper
- * 
+ *
  * Converts between Vtiger database representations and domain Client entities.
  * Supports both raw database rows and domain entity transformations.
- * 
- * @package App\Infrastructure\Mappers
+ *
  * @author Bolivar Delgado <bolivar.delgado@gmail.com>
+ *
  * @since 1.0.0
- * 
- * @see \App\Domain\Entities\Client
- * @see \App\Infrastructure\Repositories\VtigerClientRepository
+ * @see Client
+ * @see VtigerClientRepository
  */
 class ClientMapper
 {
     /**
      * Map raw database row to domain Client entity
-     * 
+     *
      * This method handles the transformation of a joined database query result
      * (from vtiger_account, vtiger_crmentity, vtiger_accountbillads, vtiger_accountshipads)
      * into a properly structured Client domain entity.
-     * 
-     * @param object $row Raw database row from joined query
-     * 
+     *
+     * @param  object  $row  Raw database row from joined query
      * @return Client Domain entity with all properties mapped
-     * 
+     *
      * @throws InvalidArgumentException If required fields are missing
-     * 
+     *
      * @example
      * $row = DB::connection('vtiger')
      *     ->table('vtiger_account')
@@ -96,22 +95,24 @@ class ClientMapper
             ship_code: $row->ship_code ?? null,
             ship_country: $row->ship_country ?? null,
             ship_pobox: $row->ship_pobox ?? null,
+
+            // Description from vtiger_crmentity
+            description: $row->description ?? null,
         );
     }
 
     /**
      * Map domain Client entity to persistence arrays
-     * 
+     *
      * This method prepares client data for database insertion or update.
      * It separates fields that go into vtiger_account from those
      * that go into vtiger_crmentity and address tables.
-     * 
-     * @param Client $client Domain entity to map
-     * @param bool $isUpdate Whether this is an update operation (affects modifiedtime)
-     * 
+     *
+     * @param  Client  $client  Domain entity to map
+     * @param  bool  $isUpdate  Whether this is an update operation (affects modifiedtime)
      * @return array{account: array, crmentity: array, billing: array|null, shipping: array|null}
-     *   Associative arrays for database operations
-     * 
+     *                                                                                            Associative arrays for database operations
+     *
      * @example
      * $mapped = ClientMapper::toPersistence($client);
      * DB::connection('vtiger')->table('vtiger_account')->insert($mapped['account']);
@@ -123,7 +124,7 @@ class ClientMapper
 
         return [
             'account' => array_filter([
-                // Core account fields 
+                // Core account fields
                 'accountid' => $client->accountid,
                 'account_no' => $client->account_no,
                 'accountname' => $client->accountname,
@@ -146,7 +147,7 @@ class ClientMapper
                 'notify_owner' => $client->notify_owner,
                 'isconvertedfromlead' => $client->isconvertedfromlead,
                 'tags' => $client->tags,
-            ], fn($v) => $v !== null),
+            ], fn ($v) => $v !== null),
 
             'crmentity' => array_filter([
                 'crmid' => $client->accountid,
@@ -160,7 +161,7 @@ class ClientMapper
                 'deleted' => 0,
                 'version' => 0,
                 'presence' => 1,
-            ], fn($v) => $v !== null),
+            ], fn ($v) => $v !== null),
 
             'billing' => $client->bill_street || $client->bill_city ? array_filter([
                 'accountaddressid' => $client->accountid,
@@ -170,7 +171,7 @@ class ClientMapper
                 'bill_code' => $client->bill_code,
                 'bill_country' => $client->bill_country,
                 'bill_pobox' => $client->bill_pobox,
-            ], fn($v) => $v !== null) : null,
+            ], fn ($v) => $v !== null) : null,
 
             'shipping' => $client->ship_street || $client->ship_city ? array_filter([
                 'accountaddressid' => $client->accountid,
@@ -180,27 +181,26 @@ class ClientMapper
                 'ship_code' => $client->ship_code,
                 'ship_country' => $client->ship_country,
                 'ship_pobox' => $client->ship_pobox,
-            ], fn($v) => $v !== null) : null,
+            ], fn ($v) => $v !== null) : null,
         ];
     }
 
     /**
      * Map collection of database rows to Client entities
-     * 
-     * @param array<object> $rows Array of raw database rows
+     *
+     * @param  array<object>  $rows  Array of raw database rows
      * @return array<Client> Array of mapped Client entities
      */
     public static function fromDatabaseRows(array $rows): array
     {
-        return array_map(fn($row) => self::fromDatabaseRow($row), $rows);
+        return array_map(fn ($row) => self::fromDatabaseRow($row), $rows);
     }
 
     /**
      * Validate that all required fields are present in the database row
-     * 
-     * @param object $row Database row to validate
-     * @return void
-     * 
+     *
+     * @param  object  $row  Database row to validate
+     *
      * @throws InvalidArgumentException If required fields are missing
      */
     private static function validateRequiredFields(object $row): void
@@ -214,7 +214,7 @@ class ClientMapper
         ];
 
         foreach ($requiredFields as $field) {
-            if (!isset($row->$field)) {
+            if (! isset($row->$field)) {
                 throw new InvalidArgumentException(
                     "Required field '{$field}' is missing from database row"
                 );

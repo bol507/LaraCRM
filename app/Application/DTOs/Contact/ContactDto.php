@@ -6,14 +6,14 @@ use App\Domain\Entities\Contact;
 
 /**
  * DTO for Contact API responses
- * 
+ *
  * Contains only the fields required for the frontend
  */
 class ContactDto
 {
     public function __construct(
         public readonly int $contactid,
-        public readonly ?string $firstname = null,
+        public readonly ?string $firstname,
         public readonly string $lastname,
         public readonly ?string $email = null,
         public readonly ?string $phone = null,
@@ -22,6 +22,7 @@ class ContactDto
         public readonly ?string $department = null,
         public readonly ?int $accountid = null,
         public readonly ?string $account_name = null,
+        public readonly ?int $assigned_user_id = null,
         public readonly ?string $assigned_user_name = null,
         public readonly ?string $description = null,
         public readonly ?string $createdtime = null,
@@ -30,7 +31,8 @@ class ContactDto
 
     /**
      * Create DTO from Contact entity or database row
-     * @param Contact|object $contact
+     *
+     * @param  Contact|object  $contact
      */
     public static function fromEntity(mixed $contact): self
     {
@@ -43,8 +45,9 @@ class ContactDto
             mobile: $contact->mobile ?? null,
             title: $contact->title ?? null,
             department: $contact->department ?? null,
-            accountid: !empty($contact->accountid) ? (int) $contact->accountid : null,
+            accountid: ! empty($contact->accountid) ? (int) $contact->accountid : null,
             account_name: $contact->accountname ?? $contact->account_name ?? null,
+            assigned_user_id: ! empty($contact->assigned_user_id) ? (int) $contact->assigned_user_id : null,
             assigned_user_name: $contact->assigned_user_name ?? $contact->user_name ?? null,
             description: $contact->description ?? null,
             createdtime: $contact->createdtime ?? null,
@@ -86,6 +89,7 @@ class ContactDto
             'department' => $this->department,
             'accountid' => $this->accountid,
             'account_name' => $this->account_name,
+            'assigned_user_id' => $this->assigned_user_id,
             'assigned_user_name' => $this->assigned_user_name,
             'description' => $this->description,
             'createdtime' => $this->createdtime,

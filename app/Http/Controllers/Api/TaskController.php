@@ -7,16 +7,15 @@ use App\Application\DTOs\Task\TaskDto;
 use App\Application\DTOs\Task\UpdateTaskRequest;
 use App\Application\UseCases\Task\CreateTaskUseCase;
 use App\Application\UseCases\Task\DeleteTaskUseCase;
-use App\Application\UseCases\Task\GetTaskUseCase;
 use App\Application\UseCases\Task\GetTasksUseCase;
-use App\Application\UseCases\Task\UpdateTaskUseCase;
+use App\Application\UseCases\Task\GetTaskUseCase;
 use App\Application\UseCases\Task\UpdateTaskStatusUseCase;
+use App\Application\UseCases\Task\UpdateTaskUseCase;
 use App\Application\UseCases\User\IsAdminUseCase;
 use App\Http\Controllers\Controller;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -24,29 +23,28 @@ use RuntimeException;
 
 /**
  * Task API Controller
- * 
+ *
  * Handles HTTP requests for task operations in the CRM system.
- * 
+ *
  * Responsibilities:
  * - Parse and validate HTTP request data
  * - Delegate business logic to Application Use Cases
  * - Transform domain responses to JSON API format
  * - Handle exceptions and return appropriate HTTP status codes
  * - Enforce authentication and authorization at HTTP layer
- * 
+ *
  * This controller is part of the Presentation/HTTP layer and should not contain:
  * - Business rules or validation logic (delegated to Use Cases)
  * - Database queries or persistence logic (delegated to Repositories)
  * - UI-specific formatting beyond JSON serialization
- * 
- * @package App\Http\Controllers\Api
+ *
  * @author Bolivar Delgado <bolivar.delgado@gmail.com>
+ *
  * @since 1.0.0
- * 
- * @see \App\Application\UseCases\Task\GetTasksUseCase
- * @see \App\Application\UseCases\Task\CreateTaskUseCase
- * @see \App\Application\UseCases\Task\UpdateTaskUseCase
- * @see \App\Application\UseCases\Task\DeleteTaskUseCase
+ * @see GetTasksUseCase
+ * @see CreateTaskUseCase
+ * @see UpdateTaskUseCase
+ * @see DeleteTaskUseCase
  * @see \App\Application\DTOs\TaskDto
  * @see \App\Application\DTOs\CreateTaskRequest
  */
@@ -54,63 +52,49 @@ class TaskController extends Controller
 {
     /**
      * Use case for listing tasks with pagination and filters
-     * 
-     * @var GetTasksUseCase
      */
     private readonly GetTasksUseCase $getTasksUseCase;
 
     /**
      * Use case for retrieving a single task by ID
-     * 
-     * @var GetTaskUseCase
      */
     private readonly GetTaskUseCase $getTaskUseCase;
 
     /**
      * Use case for creating new tasks
-     * 
-     * @var CreateTaskUseCase
      */
     private readonly CreateTaskUseCase $createTaskUseCase;
 
     /**
      * Use case for updating existing tasks
-     * 
-     * @var UpdateTaskUseCase
      */
     private readonly UpdateTaskUseCase $updateTaskUseCase;
 
     /**
      * Use case for updating task status (shortcut)
-     * 
-     * @var UpdateTaskStatusUseCase
      */
     private readonly UpdateTaskStatusUseCase $updateTaskStatusUseCase;
 
     /**
      * Use case for soft-deleting tasks
-     * 
-     * @var DeleteTaskUseCase
      */
     private readonly DeleteTaskUseCase $deleteTaskUseCase;
 
     /**
      * Use case for checking admin privileges
-     * 
-     * @var IsAdminUseCase
      */
     private readonly IsAdminUseCase $isAdminUseCase;
 
     /**
      * Constructor with dependency injection
-     * 
-     * @param GetTasksUseCase $getTasksUseCase Use case for listing tasks
-     * @param GetTaskUseCase $getTaskUseCase Use case for retrieving single task
-     * @param CreateTaskUseCase $createTaskUseCase Use case for creating tasks
-     * @param UpdateTaskUseCase $updateTaskUseCase Use case for updating tasks
-     * @param UpdateTaskStatusUseCase $updateTaskStatusUseCase Use case for status updates
-     * @param DeleteTaskUseCase $deleteTaskUseCase Use case for soft-deleting tasks
-     * @param IsAdminUseCase $isAdminUseCase Use case for checking admin privileges
+     *
+     * @param  GetTasksUseCase  $getTasksUseCase  Use case for listing tasks
+     * @param  GetTaskUseCase  $getTaskUseCase  Use case for retrieving single task
+     * @param  CreateTaskUseCase  $createTaskUseCase  Use case for creating tasks
+     * @param  UpdateTaskUseCase  $updateTaskUseCase  Use case for updating tasks
+     * @param  UpdateTaskStatusUseCase  $updateTaskStatusUseCase  Use case for status updates
+     * @param  DeleteTaskUseCase  $deleteTaskUseCase  Use case for soft-deleting tasks
+     * @param  IsAdminUseCase  $isAdminUseCase  Use case for checking admin privileges
      */
     public function __construct(
         GetTasksUseCase $getTasksUseCase,
@@ -132,12 +116,12 @@ class TaskController extends Controller
 
     /**
      * List tasks with filtering and pagination
-     * 
+     *
      * GET /api/tasks?page=1&limit=50&status=In+Progress&priority=High
-     * 
+     *
      * Retrieves tasks assigned to or created by the authenticated user,
      * with support for filtering by status, priority, date range, and search.
-     * 
+     *
      * Query parameters:
      * - page: Page number (1-based, default: 1)
      * - limit: Items per page (default: 50, max: 100)
@@ -148,18 +132,17 @@ class TaskController extends Controller
      * - related_module: Filter by related module type (e.g., "Project")
      * - related_record_id: Filter by related record ID
      * - search: Search in subject and description fields
-     * 
-     * @param Request $request HTTP request with optional query parameters
-     * 
+     *
+     * @param  Request  $request  HTTP request with optional query parameters
      * @return JsonResponse JSON response with paginated tasks, metadata, and statistics
-     * 
+     *
      * @throws InvalidArgumentException If query parameters are invalid
      * @throws RuntimeException If repository operation fails
-     * 
+     *
      * @example
      * // Get first page of high priority incomplete tasks
      * GET /api/tasks?page=1&limit=20&status=Not+Started,In+Progress&priority=High
-     * 
+     *
      * Response (200 OK):
      * {
      *   "data": [ {...}, {...} ],
@@ -178,7 +161,6 @@ class TaskController extends Controller
      *     "highPriority": 12
      *   }
      * }
-     * 
      * @example
      * // Search tasks by keyword
      * GET /api/tasks?search=proposal&limit=10
@@ -188,7 +170,7 @@ class TaskController extends Controller
         try {
             // Get authenticated user from JWT middleware
             $user = $request->attributes->get('auth_user');
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
@@ -217,7 +199,7 @@ class TaskController extends Controller
 
             // Transform entities to DTOs for API response
             $taskDtos = array_map(
-                fn($task) => $task instanceof TaskDto ? $task : TaskDto::fromEntity($task),
+                fn ($task) => $task instanceof TaskDto ? $task : TaskDto::fromEntity($task),
                 $result['tasks']
             );
 
@@ -232,39 +214,38 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Database or infrastructure error (500 Internal Server Error)
             return response()->json([
-                'error' => 'Failed to retrieve tasks: ' . $e->getMessage()
+                'error' => 'Failed to retrieve tasks: '.$e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500 Internal Server Error)
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'An unexpected error occurred: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Get a single task by its unique identifier
-     * 
+     *
      * GET /api/tasks/{taskId}
-     * 
+     *
      * Retrieves a specific task with all related data including:
      * - Task details (subject, description, dates, times)
      * - Priority and status information
      * - Assigned user and creator information
      * - Related record references (project, quote, etc.)
      * - Duration and notification settings
-     * 
-     * @param int $taskId Unique identifier of the task (vtiger_activity.activityid)
-     * 
+     *
+     * @param  int  $taskId  Unique identifier of the task (vtiger_activity.activityid)
      * @return JsonResponse JSON response with task data or error
-     * 
+     *
      * @throws InvalidArgumentException If taskId is invalid
      * @throws RuntimeException If repository operation fails
-     * 
+     *
      * @example
      * // Get task #123
      * GET /api/tasks/123
-     * 
+     *
      * Response (200 OK):
      * {
      *   "data": {
@@ -278,11 +259,10 @@ class TaskController extends Controller
      *     ...
      *   }
      * }
-     * 
      * @example
      * // Task not found
      * GET /api/tasks/999
-     * 
+     *
      * Response (404 Not Found):
      * {
      *   "error": "Task not found"
@@ -294,7 +274,7 @@ class TaskController extends Controller
             // Execute use case to retrieve task
             $task = $this->getTaskUseCase->execute($taskId);
 
-            if (!$task) {
+            if (! $task) {
                 return response()->json(['error' => 'Task not found'], 404);
             }
 
@@ -308,24 +288,24 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Database error (500 Internal Server Error)
             return response()->json([
-                'error' => 'Failed to retrieve task: ' . $e->getMessage()
+                'error' => 'Failed to retrieve task: '.$e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'An unexpected error occurred: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Create a new task
-     * 
+     *
      * POST /api/tasks
-     * 
+     *
      * Creates a new task associated with the authenticated user.
      * The user becomes both the creator and assignee by default.
-     * 
+     *
      * Request body (JSON):
      * {
      *   "subject": "Task title",                    // required, max 255 chars
@@ -341,16 +321,15 @@ class TaskController extends Controller
      *   "related_module_type": "Project",           // optional, module name
      *   "send_notification": true                   // optional, notify assignee
      * }
-     * 
-     * @param Request $request HTTP request with task creation data
-     * 
+     *
+     * @param  Request  $request  HTTP request with task creation data
      * @return JsonResponse JSON response with created task data or error
-     * 
+     *
      * @throws ValidationException If request data fails framework validation (422)
      * @throws InvalidArgumentException If domain validation fails (400)
      * @throws DomainException If business rules are violated (403)
      * @throws RuntimeException If persistence operation fails (500)
-     * 
+     *
      * @example
      * // Create a new high priority task
      * POST /api/tasks
@@ -362,7 +341,7 @@ class TaskController extends Controller
      *   "status": "Not Started",
      *   "description": "Compile Q1 financial data and analysis"
      * }
-     * 
+     *
      * Response (201 Created):
      * {
      *   "message": "Task created successfully",
@@ -378,7 +357,7 @@ class TaskController extends Controller
     {
         try {
             $user = $request->attributes->get('auth_user');
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
@@ -395,7 +374,7 @@ class TaskController extends Controller
                 'related_record_id' => 'nullable|integer',
                 'related_module_type' => 'nullable|string|max:50',
                 'send_notification' => 'nullable|boolean',
-                'assigned_user_id' => 'nullable|integer|exists:vtiger_users,id',
+                'assigned_user_id' => 'nullable|integer|exists:vtiger.vtiger_users,id',
             ]);
 
             // Determine assigned user ID
@@ -406,10 +385,10 @@ class TaskController extends Controller
 
                 if ($requestedAssigneeId !== $user->getId()) {
                     // ✅ Usar UseCase en lugar de acceder a BD directamente
-                    if (!$this->isAdminUseCase->execute($user->getId())) {
+                    if (! $this->isAdminUseCase->execute($user->getId())) {
                         return response()->json([
                             'error' => 'Only administrators can assign tasks to other users',
-                            'message' => 'Solo los administradores pueden asignar tareas a otros usuarios'
+                            'message' => 'Solo los administradores pueden asignar tareas a otros usuarios',
                         ], 403);
                     }
 
@@ -445,7 +424,7 @@ class TaskController extends Controller
         } catch (ValidationException $e) {
             return response()->json([
                 'error' => 'Validation failed',
-                'messages' => $e->errors()
+                'messages' => $e->errors(),
             ], 422);
         } catch (InvalidArgumentException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
@@ -453,23 +432,23 @@ class TaskController extends Controller
             return response()->json(['error' => $e->getMessage()], 403);
         } catch (RuntimeException $e) {
             return response()->json([
-                'error' => 'Failed to create task: ' . $e->getMessage()
+                'error' => 'Failed to create task: '.$e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'An unexpected error occurred: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Update an existing task (full or partial update)
-     * 
+     *
      * PATCH /api/tasks/{taskId}
-     * 
+     *
      * Updates task fields. Only provided fields are modified (PATCH semantics).
      * Only the assigned user, creator, or an admin can update a task.
-     * 
+     *
      * Request body (JSON) - all fields optional:
      * {
      *   "subject": "Updated title",
@@ -479,17 +458,16 @@ class TaskController extends Controller
      *   "description": "Updated description",
      *   ...
      * }
-     * 
-     * @param Request $request HTTP request with update data
-     * @param int $taskId Unique identifier of the task to update
-     * 
+     *
+     * @param  Request  $request  HTTP request with update data
+     * @param  int  $taskId  Unique identifier of the task to update
      * @return JsonResponse JSON response with updated task data or error
-     * 
+     *
      * @throws ValidationException If request data fails validation (422)
      * @throws InvalidArgumentException If domain validation fails (400)
      * @throws DomainException If user is not authorized or business rules violated (403)
      * @throws RuntimeException If update operation fails (500)
-     * 
+     *
      * @example
      * // Update task status and priority
      * PATCH /api/tasks/123
@@ -497,7 +475,7 @@ class TaskController extends Controller
      *   "status": "Completed",
      *   "priority": "Low"
      * }
-     * 
+     *
      * Response (200 OK):
      * {
      *   "message": "Task updated successfully",
@@ -508,12 +486,11 @@ class TaskController extends Controller
      *     ...
      *   }
      * }
-     * 
      * @example
      * // Unauthorized update attempt
      * PATCH /api/tasks/123
      * { "subject": "Hacked title" }
-     * 
+     *
      * Response (403 Forbidden):
      * {
      *   "error": "User 789 is not authorized to update task 123"
@@ -524,7 +501,7 @@ class TaskController extends Controller
         try {
             // Get authenticated user from JWT middleware
             $user = $request->attributes->get('auth_user');
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
@@ -551,7 +528,7 @@ class TaskController extends Controller
             $updateRequest = new UpdateTaskRequest(
                 subject: $request->input('subject'),
                 dateStart: $request->input('date_start') ?? $request->input('dateStart'),
-                dueDate: $request->input('due_date') ?? $request->input('dueDate'),  
+                dueDate: $request->input('due_date') ?? $request->input('dueDate'),
                 timeStart: $request->input('time_start') ?? $request->input('timeStart'),
                 timeEnd: $request->input('time_end') ?? $request->input('timeEnd'),
                 priority: $request->input('priority'),
@@ -579,7 +556,7 @@ class TaskController extends Controller
                 userId: $user->getId()
             );
 
-            if (!$success) {
+            if (! $success) {
                 return response()->json(['error' => 'Task not found or update failed'], 404);
             }
 
@@ -595,7 +572,7 @@ class TaskController extends Controller
             // HTTP validation errors (422)
             return response()->json([
                 'error' => 'Validation failed',
-                'messages' => $e->errors()
+                'messages' => $e->errors(),
             ], 422);
         } catch (InvalidArgumentException $e) {
             // Domain validation errors (400)
@@ -606,46 +583,45 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Persistence errors (500)
             return response()->json([
-                'error' => 'Failed to update task: ' . $e->getMessage()
+                'error' => 'Failed to update task: '.$e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected errors (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'An unexpected error occurred: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Update task status (shortcut endpoint)
-     * 
+     *
      * PATCH /api/tasks/{taskId}/status
-     * 
+     *
      * Specialized endpoint for updating only the task status.
      * More efficient than full update when only status changes.
-     * 
+     *
      * Request body (JSON):
      * {
      *   "status": "Completed"  // required, one of valid status values
      * }
-     * 
-     * @param Request $request HTTP request with new status value
-     * @param int $taskId Unique identifier of the task to update
-     * 
+     *
+     * @param  Request  $request  HTTP request with new status value
+     * @param  int  $taskId  Unique identifier of the task to update
      * @return JsonResponse JSON response with update result or error
-     * 
+     *
      * @throws ValidationException If status value is invalid (422)
      * @throws InvalidArgumentException If taskId is invalid (400)
      * @throws DomainException If user is not authorized (403)
      * @throws RuntimeException If update operation fails (500)
-     * 
+     *
      * @example
      * // Mark task as completed
      * PATCH /api/tasks/123/status
      * {
      *   "status": "Completed"
      * }
-     * 
+     *
      * Response (200 OK):
      * {
      *   "message": "Task status updated successfully",
@@ -658,7 +634,7 @@ class TaskController extends Controller
         try {
             // Get authenticated user from JWT middleware
             $user = $request->attributes->get('auth_user');
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
@@ -674,7 +650,7 @@ class TaskController extends Controller
                 modifiedBy: $user->getId()
             );
 
-            if (!$success) {
+            if (! $success) {
                 return response()->json(['error' => 'Task not found or update failed'], 404);
             }
 
@@ -687,7 +663,7 @@ class TaskController extends Controller
             // Invalid status value (422)
             return response()->json([
                 'error' => 'Validation failed',
-                'messages' => $e->errors()
+                'messages' => $e->errors(),
             ], 422);
         } catch (InvalidArgumentException $e) {
             // Invalid task ID (400)
@@ -698,48 +674,46 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Persistence error (500)
             return response()->json([
-                'error' => 'Failed to update status: ' . $e->getMessage()
+                'error' => 'Failed to update status: '.$e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'An unexpected error occurred: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Delete a task (soft delete)
-     * 
+     *
      * DELETE /api/tasks/{taskId}
-     * 
+     *
      * Marks a task as deleted. Only the assigned user, creator, or an admin
      * can delete a task. Deletion is soft (vtiger_crmentity.deleted = 1)
      * for audit trail and potential restoration.
-     * 
-     * @param Request $request HTTP request (for authentication)
-     * @param int $taskId Unique identifier of the task to delete
-     * 
+     *
+     * @param  Request  $request  HTTP request (for authentication)
+     * @param  int  $taskId  Unique identifier of the task to delete
      * @return JsonResponse JSON response with deletion result or error
-     * 
+     *
      * @throws InvalidArgumentException If taskId is invalid (400)
      * @throws DomainException If user is not authorized (403)
      * @throws RuntimeException If deletion operation fails (500)
-     * 
+     *
      * @example
      * // Delete task #123
      * DELETE /api/tasks/123
      * Authorization: Bearer {token}
-     * 
+     *
      * Response (200 OK):
      * {
      *   "message": "Task deleted successfully"
      * }
-     * 
      * @example
      * // Delete non-existent task
      * DELETE /api/tasks/999
-     * 
+     *
      * Response (404 Not Found):
      * {
      *   "error": "Task not found"
@@ -750,7 +724,7 @@ class TaskController extends Controller
         try {
             // Get authenticated user for authorization check
             $user = $request->attributes->get('auth_user');
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
@@ -760,7 +734,7 @@ class TaskController extends Controller
                 userId: $user->getId()
             );
 
-            if (!$success) {
+            if (! $success) {
                 return response()->json(['error' => 'Task not found or already deleted'], 404);
             }
 
@@ -776,39 +750,38 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Persistence error (500)
             return response()->json([
-                'error' => 'Failed to delete task: ' . $e->getMessage()
+                'error' => 'Failed to delete task: '.$e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'An unexpected error occurred: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Restore a soft-deleted task (admin feature)
-     * 
+     *
      * POST /api/tasks/{taskId}/restore
-     * 
+     *
      * Reverses a soft delete operation, making the task visible again.
      * Only the original assignee, creator, or an admin can restore tasks.
-     * 
+     *
      * Note: This endpoint is optional and may be restricted to admin users only.
-     * 
-     * @param Request $request HTTP request (for authentication)
-     * @param int $taskId Unique identifier of the task to restore
-     * 
+     *
+     * @param  Request  $request  HTTP request (for authentication)
+     * @param  int  $taskId  Unique identifier of the task to restore
      * @return JsonResponse JSON response with restore result or error
-     * 
+     *
      * @throws DomainException If user is not authorized (403)
      * @throws RuntimeException If restore operation fails (500)
-     * 
+     *
      * @example
      * // Restore accidentally deleted task
      * POST /api/tasks/123/restore
      * Authorization: Bearer {admin_token}
-     * 
+     *
      * Response (200 OK):
      * {
      *   "message": "Task restored successfully",
@@ -820,7 +793,7 @@ class TaskController extends Controller
         try {
             // Get authenticated user
             $user = $request->attributes->get('auth_user');
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
@@ -838,11 +811,11 @@ class TaskController extends Controller
             return response()->json(['error' => $e->getMessage()], 403);
         } catch (RuntimeException $e) {
             return response()->json([
-                'error' => 'Failed to restore task: ' . $e->getMessage()
+                'error' => 'Failed to restore task: '.$e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'An unexpected error occurred: ' . $e->getMessage()
+                'error' => 'An unexpected error occurred: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -853,13 +826,13 @@ class TaskController extends Controller
 
     /**
      * Parse comma-separated string into array of trimmed values
-     * 
-     * @param string|null $value Comma-separated string or null
+     *
+     * @param  string|null  $value  Comma-separated string or null
      * @return string[]|null Array of trimmed values, or null if input is null/empty
      */
     private function parseCommaSeparated(?string $value): ?array
     {
-        if (!$value || trim($value) === '') {
+        if (! $value || trim($value) === '') {
             return null;
         }
 
@@ -868,8 +841,8 @@ class TaskController extends Controller
 
     /**
      * Parse value as integer or return null
-     * 
-     * @param mixed $value Value to parse
+     *
+     * @param  mixed  $value  Value to parse
      * @return int|null Parsed integer or null if invalid
      */
     private function parseIntOrNull(mixed $value): ?int
@@ -879,6 +852,7 @@ class TaskController extends Controller
         }
 
         $parsed = filter_var($value, FILTER_VALIDATE_INT);
+
         return $parsed !== false ? $parsed : null;
     }
 }

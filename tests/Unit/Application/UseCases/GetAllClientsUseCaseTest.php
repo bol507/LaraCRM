@@ -18,14 +18,25 @@ class GetAllClientsUseCaseTest extends TestCase
 
     public function test_execute_returns_paginated_clients()
     {
-        
         $mockRepository = m::mock(ClientRepositoryInterface::class);
-        
+
         $expectedClients = [
-            new Client(1, 'Cliente A', 'a@cliente.com', '1234'),
-            new Client(2, 'Cliente B', 'b@cliente.com', '5678')
+            new Client(
+                accountid: 1,
+                account_no: 'ACC-001',
+                accountname: 'Cliente A',
+                email1: 'a@cliente.com',
+                phone: '1234'
+            ),
+            new Client(
+                accountid: 2,
+                account_no: 'ACC-002',
+                accountname: 'Cliente B',
+                email1: 'b@cliente.com',
+                phone: '5678'
+            ),
         ];
-        
+
         $paginator = new LengthAwarePaginator(
             $expectedClients,
             2,
@@ -45,6 +56,6 @@ class GetAllClientsUseCaseTest extends TestCase
         // Assert
         $this->assertInstanceOf(LengthAwarePaginator::class, $result);
         $this->assertCount(2, $result->items());
-        $this->assertEquals('Cliente A', $result->items()[0]->name);
+        $this->assertEquals('Cliente A', $result->items()[0]->accountname);
     }
 }

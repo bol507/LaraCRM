@@ -3,153 +3,177 @@
 namespace App\Application\UseCases\Comment;
 
 use App\Application\DTOs\Comment\CreateCommentRequest;
-use App\Application\Repositories\CommentRepositoryInterface;
+use App\Application\UseCases\Core\Entity\CreateEntityUseCase;
 use App\Domain\Entities\Comment;
+use App\Infrastructure\Repositories\CommentRepository;
+use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 class CreateCommentUseCase
 {
+    private const ID_LOCK_NAME = 'comment_id_generation';
+
+    private const ENTITY_SETYPE = 'ModComments';
+
     public function __construct(
-        private readonly CommentRepositoryInterface $repository
+        private readonly IdGeneratorRepository $idGenerator,
+        private readonly CreateEntityUseCase $createEntity,
+        private readonly CommentRepository $comment,
     ) {}
 
     /**
      * Execute the create comment use case
-     * 
-     * @param CreateCommentRequest $request Validated request data
+     *
+     * Orquestación de DML:
+     * 1. Generar ID único
+     * 2. Insertar vtiger_crmentity (metadata)
+     * 3. Insertar vtiger_modcomments (datos del comentario)
+     *
+     * @param  CreateCommentRequest  $request  Validated request data
      * @return Comment The newly created comment entity
-     * 
+     *
      * @throws ValidationException If validation fails
-     * @throws \InvalidArgumentException If business rules are violated
+     * @throws InvalidArgumentException If business rules are violated
      * @throws \RuntimeException If persistence fails
      */
     public function execute(CreateCommentRequest $request): Comment
     {
-        // Additional business rule validation (beyond request validation)
         $this->validateBusinessRules($request);
 
         $userId = $request->userId ?? CurrentUserService::idOr(1);
+        $now = now()->format('Y-m-d H:i:s');
 
-        // Extract parameters from DTO and pass them individually to repository
-        $comment = $this->repository->create(
-            module: $request->module,              // string
-            relatedId: $request->relatedId,         // int
-            content: $request->content,             // string
-            authenticatedUserId: $request->userId,  // int
-            parentId: $request->parentCommentId,    // ?int
-            isPrivate: $request->isPrivate ?? false // ?bool
+        // Generar ID y crear comentario en transacción
+        $commentId = $this->idGenerator->generateNextId(
+            table: 'vtiger_modcomments',
+            column: 'modcommentsid',
+            lockName: self::ID_LOCK_NAME
         );
-        
-        if (!$comment) {
-            Log::error('Failed to create comment in repository', [
-                'related_to' => $request->relatedId,
-            ]);
-            throw new \RuntimeException('Failed to create comment');
-        }
 
-        Log::debug('Comment created in repository', [
-            'commentId' => $comment->getId(),
-        ]);
-
-        try {
-            VtigerActivityTracker::created(
-                module: 'ModComments',  // Exact, case-sensitive
-                crmid: (int) $comment->getId(),
-                userId: $userId
+        // Insertar en transacción
+        $comment = DB::connection('vtiger')->transaction(function () use ($request, $userId, $commentId) {
+            // 1. Insertar vtiger_crmentity using generic use case
+            $this->createEntity->execute(
+                data: [
+                    'label' => substr(trim($request->content), 0, 100),
+                    'description' => substr($request->content, 0, 100),
+                    'smownerid' => $userId,
+                    'smcreatorid' => $userId,
+                ],
+                setype: self::ENTITY_SETYPE,
+                table: 'vtiger_crmentity',
+                userId: $userId,
+                crmId: $commentId
             );
-            
-            Log::info('Activity logged for comment creation', [
-                'commentId' => $comment->getId(),
-                'module' => 'ModComments',
-                'related_to' => $request->relatedId,
-                'userId' => $userId,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to log activity for comment creation', [
-                'commentId' => $comment->getId(),
-                'error' => $e->getMessage(),
-            ]);
-            // Do not rethrow: comment was already created
-        }
 
-        return $comment;
+            // 2. Insertar vtiger_modcomments
+            $this->comment->insert([
+                'modcommentsid' => $commentId,
+                'commentcontent' => $request->content,
+                'related_to' => $request->relatedId,
+                'parent_comments' => $request->parentCommentId,
+                'userid' => $userId,
+                'is_private' => $request->isPrivate ? '1' : '0',
+            ]);
+
+            // 3. Buscar datos del usuario para crear la entidad
+            $user = DB::connection('vtiger')
+                ->table('vtiger_users')
+                ->where('id', $userId)
+                ->first();
+
+            $userName = $user ? trim("{$user->first_name} {$user->last_name}") : 'Usuario';
+            $userEmail = $user->email1 ?? '';
+
+            // Retornar datos para crear entidad
+            return [
+                'modcommentsid' => $commentId,
+                'related_to' => $request->relatedId,
+                'commentcontent' => $request->content,
+                'userid' => $userId,
+                'parent_comments' => $request->parentCommentId,
+                'is_private' => $request->isPrivate ? '1' : '0',
+                'assigned_user_name' => $userName,
+                'assigned_user_email' => $userEmail,
+            ];
+        });
+
+        // Crear entidad del dominio
+        $entity = new Comment(
+            commentid: $commentId,
+            commentcontent: $request->content,
+            related_to: $request->relatedId,
+            parent_comments: $request->parentCommentId,
+            userid: $userId,
+            is_private: $request->isPrivate ? 1 : 0,
+            createdtime: $now,
+        );
+
+        // Registrar actividad
+        $this->logActivity($commentId, $userId);
+
+        return $entity;
     }
 
     /**
      * Validate domain-specific business rules
-     * 
-     * @param CreateCommentRequest $request
+     *
      * @throws ValidationException
-     * @throws \InvalidArgumentException
+     * @throws InvalidArgumentException
      */
     private function validateBusinessRules(CreateCommentRequest $request): void
     {
-        // Validate that content is not empty after trim
         if (trim($request->content) === '') {
             throw ValidationException::withMessages([
-                'content' => ['Comment content cannot be empty']
+                'content' => ['Comment content cannot be empty'],
             ]);
         }
 
-        // Validate maximum length (consistent with DB: TEXT = 65,535 bytes)
         if (mb_strlen($request->content) > 65000) {
             throw ValidationException::withMessages([
-                'content' => ['Comment exceeds maximum allowed length']
+                'content' => ['Comment exceeds maximum allowed length'],
             ]);
         }
 
-        // Validate that module is allowed
         $allowedModules = ['Project', 'Quotes', 'Calendar', 'Accounts', 'Contacts', 'HelpDesk'];
-        if (!in_array($request->module, $allowedModules, true)) {
-            throw new \InvalidArgumentException(
-                "Module '{$request->module}' not allowed for comments. " .
-                "Valid modules: " . implode(', ', $allowedModules)
+        if (! in_array($request->module, $allowedModules, true)) {
+            throw new InvalidArgumentException(
+                "Module '{$request->module}' not allowed for comments. ".
+                'Valid modules: '.implode(', ', $allowedModules)
             );
         }
 
-        // Validate that relatedId is positive
         if ($request->relatedId <= 0) {
-            throw new \InvalidArgumentException('Related record ID must be positive');
+            throw new InvalidArgumentException('Related record ID must be positive');
         }
 
-        // Validate that userId is positive
         if ($request->userId <= 0) {
-            throw new \InvalidArgumentException('User ID must be positive');
+            throw new InvalidArgumentException('User ID must be positive');
         }
 
-        // Validate that parentCommentId, if exists, is positive
         if ($request->parentCommentId !== null && $request->parentCommentId <= 0) {
-            throw new \InvalidArgumentException('Parent comment ID must be positive');
-        }
-
-        // Validate that user has permission to comment on this record
-        // (This validation might require a repository query or permissions service)
-        if (!$this->canUserCommentOnRecord($request->userId, $request->module, $request->relatedId)) {
-            throw new \InvalidArgumentException(
-                'You do not have permission to comment on this record'
-            );
+            throw new InvalidArgumentException('Parent comment ID must be positive');
         }
     }
 
-    /**
-     * Check if a user can comment on a specific record
-     * 
-     * @param int $userId
-     * @param string $module
-     * @param int $recordId
-     * @return bool
-     */
-    private function canUserCommentOnRecord(int $userId, string $module, int $recordId): bool
+    private function logActivity(int $commentId, int $userId): void
     {
-        // Basic implementation: allow if user is owner or admin
-        // In production, this should consult a more sophisticated permissions service
-        
-        // For now, allow all authenticated comments
-        // (Real validation will depend on your Vtiger business logic)
-        return true;
+        try {
+            VtigerActivityTracker::created(
+                module: 'ModComments',
+                crmid: $commentId,
+                userId: $userId
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to log activity for comment creation', [
+                'commentId' => $commentId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

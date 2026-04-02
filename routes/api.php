@@ -90,7 +90,7 @@ Route::middleware('jwt')->group(function () {
         Route::get('/{module}/{relatedId}', [CommentController::class, 'index']);
         Route::post('/{module}/{relatedId}', [CommentController::class, 'store']);
         Route::get('/{commentId}', [CommentController::class, 'show']);
-        Route::patch('/{commentId}', [CommentController::class, 'update']);
+        Route::patch('/{module}/{relatedId}/{commentId}', [CommentController::class, 'update']);
         Route::delete('/{commentId}', [CommentController::class, 'destroy']);
     });
 

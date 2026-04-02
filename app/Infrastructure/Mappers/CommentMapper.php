@@ -3,6 +3,7 @@
 namespace App\Infrastructure\Mappers;
 
 use App\Domain\Entities\Comment;
+use App\Helpers\TimeHelper;
 
 /**
  * Comment Mapper
@@ -62,8 +63,8 @@ class CommentMapper
             'userName' => $comment->getAssignedUserName(),
             'userEmail' => $comment->getAssignedUserEmail(),
             'userId' => $comment->getUserId(),
-            'createdAt' => $comment->getCreatedTime(),
-            'updatedAt' => $comment->getModifiedTime(),
+            'createdAt' => TimeHelper::toIso8601Utc($comment->getCreatedTime()),
+            'updatedAt' => TimeHelper::toIso8601Utc($comment->getModifiedTime()),
             'formattedCreatedAt' => $comment->getFormattedCreatedAt(),
             'isPrivate' => $comment->isPrivate(),
             'isReply' => $comment->isReply(),

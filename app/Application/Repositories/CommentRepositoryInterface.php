@@ -2,7 +2,7 @@
 
 namespace App\Application\Repositories;
 
-use App\Domain\Entities\Comment; 
+use App\Domain\Entities\Comment;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 /**
@@ -84,13 +84,21 @@ interface CommentRepositoryInterface
      * Update an existing comment
      * 
      * @param int $commentId Unique identifier of the comment to update
-     * @param array<string, mixed> $data Fields to update: 'content', 'reason_to_edit', 'is_private'
+     * @param int $authenticatedUserId ID of the user attempting the update
+     * @param string $content New comment content
+     * @param string|null $reasonToEdit Optional reason for editing (audit trail)
      * 
-     * @return bool True if update was successful, false if not found or no changes
+     * @return bool True if update was successful, false if not found or unauthorized
      * 
-     * @throws \RuntimeException If database operation fails
+     * @throws \InvalidArgumentException If parameters are invalid
+     * @throws \DomainException If user is not authorized to edit this comment
      */
-    public function update(int $commentId, array $data): bool;
+    public function update(
+        int $commentId,
+        int $authenticatedUserId,
+        string $content,
+        ?string $reasonToEdit = null
+    ): bool;
 
     /**
      * Delete a comment (soft delete via vtiger_crmentity.deleted flag)

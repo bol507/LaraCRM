@@ -2,23 +2,23 @@
 
 namespace App\Http\Controllers\Api;
 
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Validator as ValidatorFacade;
-use App\Application\UseCases\Quote\CreateQuoteUseCase;
-use App\Application\UseCases\Quote\UpdateQuoteUseCase;
-use App\Application\UseCases\Quote\GetQuoteUseCase;
-use App\Application\UseCases\DeleteQuoteUseCase;
 use App\Application\DTOs\CreateQuoteRequest;
 use App\Application\DTOs\UpdateQuoteRequest;
+use App\Application\UseCases\DeleteQuoteUseCase;
+use App\Application\UseCases\Quote\CreateQuoteUseCase;
 use App\Application\UseCases\Quote\GetAllQuotesUseCase;
+use App\Application\UseCases\Quote\GetQuoteUseCase;
+use App\Application\UseCases\Quote\UpdateQuoteUseCase;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator as ValidatorFacade;
 
 /**
  * Quote API Controller
- * 
+ *
  * Handles HTTP requests for quote (sales proposal) management operations.
- * 
+ *
  * Responsibilities:
  * - Parse and validate HTTP request data for quote CRUD operations
  * - Delegate business logic to Application Use Cases
@@ -26,34 +26,31 @@ use App\Http\Controllers\Controller;
  * - Handle exceptions and return appropriate HTTP status codes
  * - Manage pagination, filtering, and search parameters
  * - Process quote line items with validation and transformation
- * 
+ *
  * This controller is part of the Presentation/HTTP layer and should not contain:
  * - Business rules or validation logic (delegated to Use Cases)
  * - Database queries or persistence logic (delegated to Repositories)
  * - UI-specific formatting beyond JSON serialization
- * 
- * @package App\Http\Controllers\Api
+ *
  * @author Bolivar Delgado <bolivar.delgado@gmail.com>
+ *
  * @since 1.0.0
- * 
  * @see \App\Application\UseCases\CreateQuoteUseCase
  * @see \App\Application\UseCases\UpdateQuoteUseCase
  * @see \App\Application\UseCases\GetQuoteUseCase
- * @see \App\Application\UseCases\DeleteQuoteUseCase
- * @see \App\Application\DTOs\CreateQuoteRequest
- * @see \App\Application\DTOs\UpdateQuoteRequest
+ * @see DeleteQuoteUseCase
+ * @see CreateQuoteRequest
+ * @see UpdateQuoteRequest
  */
 class QuoteController extends Controller
 {
-    
-
     /**
      * Constructor with dependency injection
-     * 
-     * @param CreateQuoteUseCase $createQuoteUseCase Use case for creating quotes
-     * @param UpdateQuoteUseCase $updateQuoteUseCase Use case for updating quotes
-     * @param GetQuoteUseCase $getQuoteUseCase Use case for retrieving quotes
-     * @param DeleteQuoteUseCase $deleteQuoteUseCase Use case for deleting quotes
+     *
+     * @param  CreateQuoteUseCase  $createQuoteUseCase  Use case for creating quotes
+     * @param  UpdateQuoteUseCase  $updateQuoteUseCase  Use case for updating quotes
+     * @param  GetQuoteUseCase  $getQuoteUseCase  Use case for retrieving quotes
+     * @param  DeleteQuoteUseCase  $deleteQuoteUseCase  Use case for deleting quotes
      */
     public function __construct(
         private readonly GetAllQuotesUseCase $getAllQuoteUseCase,
@@ -65,18 +62,17 @@ class QuoteController extends Controller
 
     /**
      * List quotes with pagination and search
-     * 
+     *
      * GET /api/quotes?page=1&per_page=20&search=keyword
-     * 
+     *
      * Retrieves a paginated list of quotes with optional search filtering.
      * Results include metadata for pagination navigation and HATEOAS links.
-     * 
-     * @param Request $request HTTP request with optional pagination and search parameters
-     * 
+     *
+     * @param  Request  $request  HTTP request with optional pagination and search parameters
      * @return JsonResponse JSON response with paginated quotes and metadata
-     * 
+     *
      * @throws \RuntimeException If repository operation fails
-     * 
+     *
      * @response 200 {
      *   "data": [ {Quote}, ... ],
      *   "meta": {
@@ -93,11 +89,10 @@ class QuoteController extends Controller
      *   }
      * }
      * @response 500 { "error": "Error retrieving quotes: <message>" }
-     * 
+     *
      * @example
      * // Get first page with default limit
      * GET /api/quotes?page=1
-     * 
      * @example
      * // Search quotes by subject
      * GET /api/quotes?search=enterprise+proposal&per_page=50
@@ -130,25 +125,24 @@ class QuoteController extends Controller
                 'last' => $paginator->url($paginator->lastPage()),
                 'prev' => $paginator->previousPageUrl(),
                 'next' => $paginator->nextPageUrl(),
-            ]
+            ],
         ]);
     }
 
     /**
      * Create a new quote with line items
-     * 
+     *
      * POST /api/quotes
-     * 
+     *
      * Creates a new sales quote with one or more line items. The authenticated
      * user becomes the creator/owner of the quote.
-     * 
-     * @param Request $request HTTP request with quote creation data including items array
-     * 
+     *
+     * @param  Request  $request  HTTP request with quote creation data including items array
      * @return JsonResponse JSON response with created quote ID, quote number, or error
-     * 
+     *
      * @throws \InvalidArgumentException If request validation fails (422)
      * @throws \RuntimeException If persistence operation fails (500)
-     * 
+     *
      * @response 201 {
      *   "message": "Quote created successfully",
      *   "quoteid": 12345,
@@ -157,7 +151,7 @@ class QuoteController extends Controller
      * @response 401 { "error": "User not authenticated" }
      * @response 422 { "error": "Validation failed", "messages": { field: [errors] } }
      * @response 500 { "error": "Error creating quote: <message>" }
-     * 
+     *
      * @example
      * // Create a new quote with line items
      * POST /api/quotes
@@ -198,13 +192,13 @@ class QuoteController extends Controller
             // Return validation errors (422 Unprocessable Entity)
             return response()->json([
                 'error' => 'Validation failed',
-                'messages' => $validator->errors()
+                'messages' => $validator->errors(),
             ], 422);
         }
 
         // Get authenticated user from JWT middleware
         $authenticatedUser = $request->attributes->get('auth_user');
-        if (!$authenticatedUser) {
+        if (! $authenticatedUser) {
             return response()->json(['error' => 'User not authenticated'], 401);
         }
 
@@ -225,46 +219,42 @@ class QuoteController extends Controller
 
         try {
             // Execute use case to create quote
-            $quote = $this->createQuoteUseCase->execute($createRequest, $authenticatedUser->getId());
-            
-            
-            
+            $quoteId = $this->createQuoteUseCase->execute($createRequest, $authenticatedUser->getId());
+
             return response()->json([
                 'message' => 'Quote created successfully',
-                'quoteid' => $quote->quoteid,
-                'quoteno' => $quote->quoteno
+                'quoteid' => $quoteId,
             ], 201);
 
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error creating quote: ' . $e->getMessage()
+                'error' => 'Error creating quote: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Get a quote by its unique identifier
-     * 
+     *
      * GET /api/quotes/{id}
-     * 
+     *
      * Retrieves a single quote with all its details including line items,
      * totals, and related entity information.
-     * 
-     * @param int $id Unique identifier of the quote to retrieve
-     * 
+     *
+     * @param  int  $id  Unique identifier of the quote to retrieve
      * @return JsonResponse JSON response with quote data or error
-     * 
+     *
      * @throws \RuntimeException If repository operation fails
-     * 
+     *
      * @response 200 { Quote }
      * @response 404 { "error": "Quote not found" }
      * @response 500 { "error": "Error retrieving quote: <message>" }
-     * 
+     *
      * @example
      * // Get quote #12345
      * GET /api/quotes/12345
-     * 
+     *
      * Response:
      * {
      *   "quoteid": 12345,
@@ -282,42 +272,41 @@ class QuoteController extends Controller
         try {
             // Execute use case to fetch quote by ID
             $quote = $this->getQuoteUseCase->executeById($id);
-            
-            if (!$quote) {
+
+            if (! $quote) {
                 // Quote not found (404 Not Found)
                 return response()->json(['error' => 'Quote not found'], 404);
             }
-            
+
             return response()->json($quote);
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error retrieving quote: ' . $e->getMessage()
+                'error' => 'Error retrieving quote: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Update an existing quote with line items
-     * 
+     *
      * PUT|PATCH /api/quotes/{id}
-     * 
+     *
      * Updates an existing quote's details and line items. All fields are
      * optional for partial updates. Quote stage transitions are validated.
-     * 
-     * @param Request $request HTTP request with update data (all fields optional)
-     * @param int $id Unique identifier of the quote to update
-     * 
+     *
+     * @param  Request  $request  HTTP request with update data (all fields optional)
+     * @param  int  $id  Unique identifier of the quote to update
      * @return JsonResponse JSON response with update result or error
-     * 
+     *
      * @throws \InvalidArgumentException If request validation fails (422)
      * @throws \RuntimeException If update operation fails (500)
-     * 
+     *
      * @response 200 { "message": "Quote updated successfully" }
      * @response 404 { "error": "Quote not found" }
      * @response 422 { "error": "Validation failed", "messages": {...} }
      * @response 500 { "error": "Error updating quote: <message>" }
-     * 
+     *
      * @example
      * // Update quote stage and add discount
      * PATCH /api/quotes/12345
@@ -356,13 +345,13 @@ class QuoteController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'error' => 'Validation failed',
-                'messages' => $validator->errors()
+                'messages' => $validator->errors(),
             ], 422);
         }
 
         // Get authenticated user from JWT middleware
         $authenticatedUser = $request->attributes->get('auth_user');
-        if (!$authenticatedUser) {
+        if (! $authenticatedUser) {
             return response()->json(['error' => 'User not authenticated'], 401);
         }
 
@@ -386,42 +375,41 @@ class QuoteController extends Controller
         try {
             // Execute use case to update quote
             $success = $this->updateQuoteUseCase->execute($updateRequest, $authenticatedUser->getId());
-            
+
             if ($success) {
                 return response()->json(['message' => 'Quote updated successfully']);
             }
-            
+
             // Quote not found (404 Not Found)
             return response()->json(['error' => 'Quote not found'], 404);
 
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error updating quote: ' . $e->getMessage()
+                'error' => 'Error updating quote: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Delete (soft delete) a quote
-     * 
+     *
      * DELETE /api/quotes/{id}
-     * 
+     *
      * Marks a quote as deleted. Only authorized users (owner or admin)
      * can delete a quote (enforced by business rules in the Use Case).
-     * 
-     * @param Request $request HTTP request (used for authentication)
-     * @param int $id Unique identifier of the quote to delete
-     * 
+     *
+     * @param  Request  $request  HTTP request (used for authentication)
+     * @param  int  $id  Unique identifier of the quote to delete
      * @return JsonResponse JSON response with deletion result or error
-     * 
+     *
      * @throws \RuntimeException If deletion operation fails (500)
-     * 
+     *
      * @response 200 { "message": "Quote deleted successfully" }
      * @response 401 { "error": "User not authenticated" }
      * @response 404 { "error": "Quote not found" }
      * @response 500 { "error": "Error deleting quote: <message>" }
-     * 
+     *
      * @example
      * // Delete quote #12345
      * DELETE /api/quotes/12345
@@ -430,40 +418,39 @@ class QuoteController extends Controller
     {
         // Get authenticated user from JWT middleware
         $authenticatedUser = $request->attributes->get('auth_user');
-        if (!$authenticatedUser) {
+        if (! $authenticatedUser) {
             return response()->json(['error' => 'User not authenticated'], 401);
         }
 
         try {
             // Execute use case to delete quote
             $success = $this->deleteQuoteUseCase->execute($id, $authenticatedUser->getId());
-            
+
             if ($success) {
                 return response()->json(['message' => 'Quote deleted successfully']);
             }
-            
+
             // Quote not found (404 Not Found)
             return response()->json(['error' => 'Quote not found'], 404);
 
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error deleting quote: ' . $e->getMessage()
+                'error' => 'Error deleting quote: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Prepare quote line items for DTO conversion
-     * 
+     *
      * Transforms incoming item data from request format to the structure
      * expected by CreateQuoteRequest and UpdateQuoteRequest DTOs.
      * Ensures numeric values are properly cast and defaults are applied.
-     * 
-     * @param array $items Array of line item data from HTTP request
-     * 
+     *
+     * @param  array  $items  Array of line item data from HTTP request
      * @return array Prepared items array with consistent structure and types
-     * 
+     *
      * @example
      * // Input:
      * [

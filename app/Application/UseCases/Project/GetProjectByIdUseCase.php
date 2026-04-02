@@ -4,6 +4,7 @@ namespace App\Application\UseCases\Project;
 
 use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Domain\Entities\Project;
+use Illuminate\Support\Facades\Log;
 
 class GetProjectByIdUseCase
 {
@@ -15,7 +16,16 @@ class GetProjectByIdUseCase
     }
 
     public function execute(int $projectId): ?Project
-    {
-        return $this->repository->findById($projectId);
+    {   
+        try{
+            return $this->repository->findById($projectId);
+        }
+        catch(\Exception $e){
+            Log::error('Failed to log project', [
+                'projectId' => $projectId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 }

@@ -2,78 +2,119 @@
 
 namespace App\Application\UseCases\Project;
 
-use App\Application\Repositories\ProjectRepositoryInterface;
+use App\Application\UseCases\Core\Entity\CreateEntityUseCase;
+use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
+use App\Infrastructure\Repositories\ProjectRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+use RuntimeException;
 
 class CreateProjectUseCase
 {
-    protected $repository;
+    private const ID_LOCK_NAME = 'project_id_generation';
 
-    public function __construct(ProjectRepositoryInterface $repository)
-    {
-        $this->repository = $repository;
-    }
+    private const ENTITY_SETYPE = 'Project';
+
+    public function __construct(
+        private readonly IdGeneratorRepository $idGenerator,
+        private readonly CreateEntityUseCase $createEntity,
+        private readonly ProjectRepository $project,
+    ) {}
 
     /**
      * Execute the use case to create a project
-     * 
-     * @param array $data Project data
-     * @param int $createdByUserId ID of the user creating the project
+     *
+     * Orquestación de DML:
+     * 1. Generar ID único
+     * 2. Insertar vtiger_crmentity (metadata)
+     * 3. Insertar vtiger_project (datos del proyecto)
+     *
+     * @param  array  $data  Project data
+     * @param  int|null  $createdByUserId  ID of the user creating the project
      * @return int ID of the created project
-     * @throws \InvalidArgumentException If the project name is missing
-     * @throws \Exception If the project creation fails
+     *
+     * @throws InvalidArgumentException If the project name is missing
+     * @throws RuntimeException If the project creation fails
      */
-    public function execute(array $data, int $createdByUserId): int
+    public function execute(array $data, ?int $createdByUserId = null): int
     {
         if (empty($data['projectname'])) {
-            throw new \InvalidArgumentException('Project name is required');
+            throw new InvalidArgumentException('Project name is required');
         }
 
-        // Determine the creating user (JWT or parameter)
         $userId = $createdByUserId ?? CurrentUserService::idOr(1);
 
-        // Prepare additional data
-        $data['created_by_user_id'] = $userId;
-        
-        // Map quoteid to potentialid if exists (relationship Quote → Opportunity → Project)
-        if (isset($data['quoteid']) && $data['quoteid']) {
-            $data['potentialid'] = $data['quoteid'];
-        }
-        
-        if (!isset($data['assigned_user_id'])) {
-            $data['assigned_user_id'] = null;
+        $assignedUserId = $data['assigned_user_id'] ?? null;
+        if ($assignedUserId === null) {
+            $assignedUserId = 2; //  ID  "All" en Vtiger
         }
 
-        // Create project in the repository (returns the ID)
-        $projectId = $this->repository->create($data, $userId);
-        
-        if (!$projectId || !is_numeric($projectId)) {
-            throw new \Exception('Failed to create project');
-        }
-
-        // Synchronize vtiger_crmentity.label with projectname
-        // This is crucial for the activity panel to display the correct name
-        DB::connection('vtiger')
-            ->table('vtiger_crmentity')
-            ->updateOrInsert(
-                ['crmid' => $projectId, 'setype' => 'Project'],
-                [
-                    'label' => $data['projectname'],
-                    'createdtime' => now(),
-                    'modifiedtime' => now(),
-                    'deleted' => 0,
-                ]
+        return DB::connection('vtiger')->transaction(function () use ($data, $userId, $assignedUserId) {
+            // 1. Generar ID único
+            $projectId = $this->idGenerator->generateNextId(
+                table: 'vtiger_project',
+                column: 'projectid',
+                lockName: self::ID_LOCK_NAME
             );
 
-        // Register activity in vtiger_modtracker_basic
-        VtigerActivityTracker::created(
-            module: 'Project', // Correct module for projects in Vtiger
-            crmid: (int) $projectId,
-            userId: $userId
-        );
-        
-        return $projectId;
+            // 2. Insertar vtiger_crmentity using generic use case
+            $this->createEntity->execute(
+                data: [
+                    'label' => trim($data['projectname']),
+                    'description' => $data['description'] ?? '',
+                    'smownerid' => $assignedUserId,
+                    'smcreatorid' => $userId,
+                ],
+                setype: self::ENTITY_SETYPE,
+                table: 'vtiger_crmentity',
+                userId: $userId,
+                crmId: $projectId
+            );
+
+            // 3. Insertar vtiger_project
+            $this->project->insert([
+                'projectid' => $projectId,
+                'project_no' => $this->project->getNextProjectNumber(),
+                'projectname' => $data['projectname'],
+                'startdate' => $data['startdate'] ?? null,
+                'targetenddate' => $data['targetenddate'] ?? null,
+                'actualenddate' => $data['actualenddate'] ?? null,
+                'targetbudget' => $data['targetbudget'] ?? null,
+                'projecturl' => $data['projecturl'] ?? null,
+                'projectstatus' => $data['projectstatus'] ?? 'Draft',
+                'projectpriority' => $data['projectpriority'] ?? 'Normal',
+                'projecttype' => $data['projecttype'] ?? null,
+                'progress' => $data['progress'] ?? 0,
+                'tags' => null,
+                'linktoaccountscontacts' => $data['accountid'] ?? null,
+                'isconvertedfrompotential' => isset($data['quoteid']) && $data['quoteid'] ? 1 : 0,
+                'potentialid' => $data['potentialid'] ?? $data['quoteid'] ?? null,
+                'cf_922' => null,
+            ]);
+
+            // Registrar actividad
+            $this->logActivity($projectId, $userId);
+
+            return $projectId;
+        });
+    }
+
+    private function logActivity(int $projectId, int $userId): void
+    {
+        try {
+            VtigerActivityTracker::created(
+                module: 'Project',
+                crmid: $projectId,
+                userId: $userId
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to log activity', [
+                'projectId' => $projectId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

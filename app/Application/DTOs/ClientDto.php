@@ -46,6 +46,8 @@ class ClientDto
             'ship_code' => $client->ship_code,
             'ship_country' => $client->ship_country,
             'ship_pobox' => $client->ship_pobox,
+            // Description from vtiger_crmentity
+            'description' => $client->description,
         ];
     }
 }

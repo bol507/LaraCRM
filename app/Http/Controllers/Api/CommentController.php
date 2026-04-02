@@ -96,7 +96,7 @@ class CommentController extends Controller
         GetCommentsByRelatedIdUseCase $getCommentsByRelatedIdUseCase,
         CreateCommentUseCase $createCommentUseCase,
         GetCommentUseCase $getCommentUseCase,
-        ?UpdateCommentUseCase $updateCommentUseCase = null,
+        UpdateCommentUseCase $updateCommentUseCase,
         ?DeleteCommentUseCase $deleteCommentUseCase = null
 
     ) {
@@ -366,78 +366,96 @@ class CommentController extends Controller
     }
 
     /**
-     * Update an existing comment
-     * 
-     * PATCH /api/comments/{commentId}
-     * 
-     * Updates comment content and metadata. Only the original author
-     * can update their own comments (enforced by business rules).
-     * 
-     * @param Request $request HTTP request with update data
-     * @param int $commentId Unique identifier of the comment to update
-     * 
-     * @return JsonResponse JSON response with update result
-     * 
-     * @throws ValidationException If request data fails validation (422)
-     * @throws DomainException If user is not authorized to update (403)
-     * @throws RuntimeException If update operation fails (500)
-     * 
-     * @response 200 { "message": "Comment updated successfully" }
-     * @response 403 { "error": "Not authorized to update this comment" }
-     * @response 422 { "error": "Validation failed", "messages": {...} }
-     * @response 501 { "error": "Update not implemented" }
-     * 
-     * @example
-     * // Update comment content
-     * PATCH /api/comments/456
-     * {
-     *   "content": "Updated comment text",
-     *   "reason_to_edit": "Fixed typo"
-     * }
-     */
-    public function update(Request $request, int $commentId): JsonResponse
-    {
-        try {
-            //  Check if update functionality is implemented
-            if (!$this->updateCommentUseCase) {
-                return response()->json(['error' => 'Update not implemented'], 501);
-            }
+ * Update an existing comment
+ * 
+ * PATCH /api/comments/{commentId}
+ * 
+ * Updates the content of an existing comment. Only the original author
+ * or an administrator can edit a comment.
+ * 
+ * @param Request $request HTTP request with update data
+ * @param int $commentId Unique identifier of the comment to update
+ * 
+ * @return JsonResponse JSON response with update result or error
+ * 
+ * @response 200 { "message": "Comment updated successfully" }
+ * @response 400 { "error": "Invalid request: <message>" }
+ * @response 401 { "error": "User not authenticated" }
+ * @response 403 { "error": "You are not authorized to edit this comment" }
+ * @response 404 { "error": "Comment not found" }
+ * @response 422 { "error": "Validation failed", "messages": {...} }
+ * @response 500 { "error": "Error updating comment: <message>" }
+ * 
+ * @example
+ * // Update comment content with reason
+ * PATCH /api/comments/9384
+ * {
+ *   "content": "Pendiente inicios de obra civil - actualizado",
+ *   "reason_to_edit": "Corrección de ortografía"
+ * }
+ */
+public function update(Request $request, string $module,  int $relatedId, int $commentId ): JsonResponse
+{
+    try {
+        // Validate incoming request data
+        $validated = $request->validate([
+            'content' => 'required|string|max:65000',
+            'reason_to_edit' => 'nullable|string|max:255',
+        ]);
 
-            //  Verify user authentication
-            $user = $request->attributes->get('auth_user');
-            if (!$user) {
-                return response()->json(['error' => 'Unauthorized'], 401);
-            }
-
-            //  Validate incoming update data
-            $validated = $request->validate([
-                'content' => 'nullable|string|max:65000',
-                'reason_to_edit' => 'nullable|string|max:255',
-                'is_private' => 'nullable|boolean',
-                'attachment' => 'nullable|string|max:255',
-            ]);
-
-            // TODO: Create UpdateCommentRequest DTO and execute use case
-            // $updateRequest = new UpdateCommentRequest(...);
-            // $success = $this->updateCommentUseCase->execute($commentId, $updateRequest, $user->getId());
-
-            return response()->json(['error' => 'Not implemented'], 501);
-        } catch (ValidationException $e) {
-            //  Handle validation errors (422 Unprocessable Entity)
-            return response()->json([
-                'error' => 'Validation failed',
-                'messages' => $e->errors()
-            ], 422);
-        } catch (DomainException $e) {
-            //  Handle authorization errors (403 Forbidden)
-            return response()->json(['error' => $e->getMessage()], 403);
-        } catch (\Exception $e) {
-            //  Handle unexpected errors (500 Internal Server Error)
-            return response()->json([
-                'error' => 'Failed to update comment: ' . $e->getMessage()
-            ], 500);
+        // Get authenticated user from JWT middleware
+        $authenticatedUser = $request->attributes->get('auth_user');
+        if (!$authenticatedUser) {
+            return response()->json(['error' => 'User not authenticated'], 401);
         }
+
+        // Execute use case to update comment
+        $success = $this->updateCommentUseCase->execute(
+            commentId: $commentId,
+            authenticatedUserId: $authenticatedUser->getId(),
+            content: $validated['content'],
+            reasonToEdit: $validated['reason_to_edit'] ?? null,
+            module: $module,     
+            relatedId: $relatedId 
+        );
+
+        if ($success) {
+            return response()->json([
+                'message' => 'Comment updated successfully'
+            ]);
+        }
+
+        // Comment not found (404 Not Found)
+        return response()->json(['error' => 'Comment not found'], 404);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        // Handle validation errors (422 Unprocessable Entity)
+        return response()->json([
+            'error' => 'Validation failed',
+            'messages' => $e->errors()
+        ], 422);
+
+    } catch (\DomainException $e) {
+        // Handle authorization errors (403 Forbidden)
+        return response()->json(['error' => $e->getMessage()], 403);
+
+    } catch (\InvalidArgumentException $e) {
+        // Handle invalid input (400 Bad Request)
+        return response()->json(['error' => 'Invalid request: ' . $e->getMessage()], 400);
+
+    } catch (\Exception $e) {
+        // Log and return error for unexpected failures (500)
+        Log::error('Error updating comment: ' . $e->getMessage(), [
+            'commentId' => $commentId,
+            'userId' => $request->attributes->get('auth_user')?->getId() ?? null,
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        return response()->json([
+            'error' => 'Error updating comment: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Delete (soft delete) a comment
@@ -565,7 +583,7 @@ class CommentController extends Controller
      * 
      * @return JsonResponse
      */
-    public function updateByTask(Request $request, int $taskId, int $commentId): JsonResponse
+    /*public function updateByTask(Request $request, int $taskId, int $commentId): JsonResponse
     {
         // Optional: Add task-specific authorization logic here
         // For now, delegate to generic update
@@ -583,10 +601,10 @@ class CommentController extends Controller
      * 
      * @return JsonResponse
      */
-    public function destroyByTask(Request $request, int $taskId, int $commentId): JsonResponse
+   /* public function destroyByTask(Request $request, int $taskId, int $commentId): JsonResponse
     {
         // Optional: Verify comment belongs to this task before deleting
         // For now, delegate to generic destroy
         return $this->destroy($request, $commentId);
-    }
+    }*/
 }

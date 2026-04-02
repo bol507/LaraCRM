@@ -2,66 +2,93 @@
 
 namespace App\Application\UseCases\Project;
 
-use App\Application\Repositories\ProjectRepositoryInterface;
+use App\Application\UseCases\Core\Entity\UpdateEntityUseCase;
+use App\Infrastructure\Repositories\ProjectRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+use RuntimeException;
 
 class UpdateProjectUseCase
 {
-    protected $repository;
-
-    public function __construct(ProjectRepositoryInterface $repository)
-    {
-        $this->repository = $repository;
-    }
+    public function __construct(
+        private readonly UpdateEntityUseCase $updateEntity,
+        private readonly ProjectRepository $project,
+    ) {}
 
     /**
      * Execute the use case to update a project
-     * 
-     * @param int $projectId ID of the project to update
-     * @param array $data Project data to update
-     * @param int|null $modifiedByUserId ID of the user performing the update
+     *
+     * Orquestación de DML:
+     * 1. Validar que el proyecto existe
+     * 2. Actualizar vtiger_project (datos del proyecto)
+     * 3. Actualizar vtiger_crmentity (label + modifiedby)
+     *
+     * @param  int  $projectId  ID of the project to update
+     * @param  array  $data  Project data to update
+     * @param  int|null  $modifiedByUserId  ID of the user performing the update
      * @return bool True if updated successfully
-     * @throws \InvalidArgumentException If the project ID is missing
-     * @throws \Exception If the project update fails
+     *
+     * @throws InvalidArgumentException If the project ID is missing
+     * @throws RuntimeException If the project update fails
      */
     public function execute(int $projectId, array $data, ?int $modifiedByUserId = null): bool
     {
-        // Validate project ID
-        if (!$projectId) {
-            throw new \InvalidArgumentException('Project ID is required');
+        if (! $projectId) {
+            throw new InvalidArgumentException('Project ID is required');
         }
 
-        // Determine the modifying user (JWT or parameter)
         $userId = $modifiedByUserId ?? CurrentUserService::idOr(1);
 
-        // Update vtiger_crmentity.label if the project name changed
-        if (!empty($data['projectname'])) {
-            DB::connection('vtiger')
-                ->table('vtiger_crmentity')
-                ->where('crmid', $projectId)
-                ->where('setype', 'Project')
-                ->update([
-                    'label' => $data['projectname'],
-                    'modifiedtime' => now(),
-                ]);
+        // Validar que el proyecto existe
+        if (! $this->project->exists($projectId)) {
+            throw new InvalidArgumentException('Project not found');
         }
 
-        // Update project in the repository
-        $updated = $this->repository->update($projectId, $data, $userId);
-        
-        if (!$updated) {
-            throw new \Exception('Failed to update project');
-        }
+        // Filtrar valores null
+        $data = array_filter($data, fn ($v) => $v !== null);
 
-        // Register activity in vtiger_modtracker_basic
-        VtigerActivityTracker::updated(
-            module: 'Project', // Correct module for projects
-            crmid: $projectId,
-            userId: $userId
-        );
-        
-        return $updated;
+        // Actualizar en transacción
+        DB::connection('vtiger')->transaction(function () use ($projectId, $data, $userId) {
+            // 1. Actualizar vtiger_project
+            if (! empty($data)) {
+                $this->project->updateProject($projectId, $data);
+            }
+
+            // 2. Actualizar vtiger_crmentity using generic use case
+            if (! empty($data['projectname'])) {
+                $this->updateEntity->execute(
+                    crmId: $projectId,
+                    data: [
+                        'label' => trim($data['projectname']),
+                        'description' => $data['description'] ?? ''
+                    ],
+                    userId: $userId
+                );
+            }
+        });
+
+        // Registrar actividad
+        $this->logActivity($projectId, $userId);
+
+        return true;
+    }
+
+    private function logActivity(int $projectId, int $userId): void
+    {
+        try {
+            VtigerActivityTracker::updated(
+                module: 'Project',
+                crmid: $projectId,
+                userId: $userId
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to log activity', [
+                'projectId' => $projectId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

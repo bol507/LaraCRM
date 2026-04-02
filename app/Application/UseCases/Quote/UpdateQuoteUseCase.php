@@ -3,57 +3,102 @@
 namespace App\Application\UseCases\Quote;
 
 use App\Application\DTOs\UpdateQuoteRequest;
-use App\Application\Repositories\QuoteRepositoryInterface;
+use App\Application\UseCases\Core\Entity\UpdateEntityUseCase;
+use App\Infrastructure\Repositories\QuoteRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+use RuntimeException;
 
 class UpdateQuoteUseCase
 {
     public function __construct(
-        private readonly QuoteRepositoryInterface $quoteRepository
+        private readonly UpdateEntityUseCase $updateEntity,
+        private readonly QuoteRepository $quote,
     ) {}
 
-    public function execute(UpdateQuoteRequest $request, int $modifiedByUserId): bool
+    /**
+     * Execute the quote update use case
+     *
+     * Orquestación de DML:
+     * 1. Validar que la cotización existe
+     * 2. Actualizar vtiger_quotes (datos de cotización)
+     * 3. Actualizar vtiger_crmentity (label + modifiedby)
+     *
+     * @param  UpdateQuoteRequest  $request  The request with update data
+     * @param  int|null  $modifiedByUserId  User performing the update
+     * @return bool True if updated successfully
+     *
+     * @throws InvalidArgumentException If the quote ID is missing
+     * @throws RuntimeException If the update fails
+     */
+    public function execute(UpdateQuoteRequest $request, ?int $modifiedByUserId = null): bool
     {
-        
-        if (empty($request->items)) {
-            throw new \InvalidArgumentException('La cotización debe tener al menos un ítem');
-        }
-
-        
         $quoteId = $request->quoteid;
-        
-        if (!$quoteId) {
-            throw new \InvalidArgumentException('El ID de la cotización es requerido');
+
+        if (! $quoteId) {
+            throw new InvalidArgumentException('Quote ID is required');
         }
 
         $userId = $modifiedByUserId ?? CurrentUserService::idOr(1);
 
-        if (!empty($request->subject)) {
-            DB::connection('vtiger')
-                ->table('vtiger_crmentity')
-                ->where('crmid', $quoteId)
-                ->where('setype', 'Quotes')
-                ->update([
-                    'label' => $request->subject,
-                    'modifiedtime' => now(),
-                ]);
-        }
-        
-        $updatedQuote = $this->quoteRepository->update($request, $userId);
-        
-        if (!$updatedQuote) {
-            throw new \Exception('No se pudo actualizar la cotización');
+        // Validar que la cotización existe
+        if (! $this->quote->exists($quoteId)) {
+            throw new InvalidArgumentException('Quote not found');
         }
 
-        
-        VtigerActivityTracker::updated(
-            module: 'Quotes',
-            crmid: $quoteId,  
-            userId: $userId  
-        );
-        
-        return $updatedQuote;
+        // Preparar datos para actualizar usando los campos del DTO
+        $data = [
+            'subject' => $request->subject,
+            'potentialid' => $request->potentialid,
+            'quotestage' => $request->quote_stage ?? null,
+            'validtill' => $request->validtill ?? null,
+            'accountid' => $request->accountid ?? null,
+        ];
+
+        // Filtrar valores null
+        $data = array_filter($data, fn ($v) => $v !== null);
+
+        // Actualizar en transacción
+        DB::connection('vtiger')->transaction(function () use ($quoteId, $data, $userId, $request) {
+            // 1. Actualizar vtiger_quotes
+            if (! empty($data)) {
+                $this->quote->updateQuote($quoteId, $data);
+            }
+
+            // 2. Actualizar vtiger_crmentity (label y description)
+            $crmentityData = ['label' => trim($request->subject)];
+            if ($request->description !== null) {
+                $crmentityData['description'] = $request->description;
+            }
+            $this->updateEntity->execute(
+                crmId: $quoteId,
+                data: $crmentityData,
+                userId: $userId
+            );
+        });
+
+        // Registrar actividad
+        $this->logActivity($quoteId, $userId);
+
+        return true;
+    }
+
+    private function logActivity(int $quoteId, int $userId): void
+    {
+        try {
+            VtigerActivityTracker::updated(
+                module: 'Quotes',
+                crmid: $quoteId,
+                userId: $userId
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to log activity', [
+                'quoteId' => $quoteId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

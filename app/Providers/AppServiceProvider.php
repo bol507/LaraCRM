@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Application\Contracts\ActivityTrackerInterface;
+use App\Application\Contracts\GoogleDriveServiceInterface;
 use App\Application\Repositories\ActivityLogRepositoryInterface;
 use App\Application\Repositories\AttachmentRepositoryInterface;
 use App\Application\Repositories\ClientRepositoryInterface;
@@ -36,6 +38,8 @@ use App\Infrastructure\Repositories\VtigerDashboardRepository;
 use App\Infrastructure\Repositories\VtigerGeneralConditionsRepository;
 use App\Infrastructure\Repositories\VtigerTaskRepository;
 use App\Infrastructure\Repositories\VtigerUserRepository;
+use App\Services\ActivityTrackerWrapper;
+use App\Services\GoogleDrive\GoogleDriveFactory;
 use App\Services\JwtService;
 use Illuminate\Support\ServiceProvider;
 
@@ -46,9 +50,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(JwtService::class, function ($app) {
-            return new JwtService;
-        });
+        
 
         // Core repositories (singleton - shared across all use cases)
         $this->app->singleton(CrmentityRepository::class);
@@ -72,7 +74,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ProjectRepository::class);
         $this->app->singleton(CommentRepository::class);
 
+        $this->registerServices();
         $this->registerRepositories();
+        
 
     }
 
@@ -147,5 +151,22 @@ class AppServiceProvider extends ServiceProvider
             VtigerActivityLogRepository::class
         );
 
+    }
+
+    private function registerServices(): void
+    {
+        // JWT
+        $this->app->singleton(JwtService::class, function ($app) {
+            return new JwtService;
+        });
+        // Activity tracker
+        $this->app->singleton(
+            ActivityTrackerInterface::class,
+            ActivityTrackerWrapper::class
+        );
+        // Google Drive
+        $this->app->singleton(GoogleDriveServiceInterface::class, function ($app) {
+            return GoogleDriveFactory::create();
+        });
     }
 }

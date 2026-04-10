@@ -88,7 +88,9 @@ interface OpportunityRepositoryInterface
         int $page = 1,
         int $perPage = 20,
         ?string $search = null,
-        ?int $accountId = null
+        ?int $accountId = null,
+        ?string $sortBy = null,
+        ?string $sortOrder = null
     ): LengthAwarePaginator;
 
     /**

@@ -6,12 +6,14 @@ use App\Application\DTOs\CreateQuoteRequest;
 use App\Application\DTOs\UpdateQuoteRequest;
 use App\Application\UseCases\DeleteQuoteUseCase;
 use App\Application\UseCases\Quote\CreateQuoteUseCase;
+use App\Application\UseCases\Quote\DuplicateQuoteUseCase;
 use App\Application\UseCases\Quote\GetAllQuotesUseCase;
 use App\Application\UseCases\Quote\GetQuoteUseCase;
 use App\Application\UseCases\Quote\UpdateQuoteUseCase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
 
 /**
@@ -57,7 +59,8 @@ class QuoteController extends Controller
         private readonly CreateQuoteUseCase $createQuoteUseCase,
         private readonly UpdateQuoteUseCase $updateQuoteUseCase,
         private readonly GetQuoteUseCase $getQuoteUseCase,
-        private readonly DeleteQuoteUseCase $deleteQuoteUseCase
+        private readonly DeleteQuoteUseCase $deleteQuoteUseCase,
+        private readonly DuplicateQuoteUseCase $duplicateQuoteUseCase
     ) {}
 
     /**
@@ -225,11 +228,10 @@ class QuoteController extends Controller
                 'message' => 'Quote created successfully',
                 'quoteid' => $quoteId,
             ], 201);
-
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error creating quote: '.$e->getMessage(),
+                'error' => 'Error creating quote: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -282,7 +284,7 @@ class QuoteController extends Controller
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error retrieving quote: '.$e->getMessage(),
+                'error' => 'Error retrieving quote: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -382,11 +384,10 @@ class QuoteController extends Controller
 
             // Quote not found (404 Not Found)
             return response()->json(['error' => 'Quote not found'], 404);
-
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error updating quote: '.$e->getMessage(),
+                'error' => 'Error updating quote: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -432,11 +433,10 @@ class QuoteController extends Controller
 
             // Quote not found (404 Not Found)
             return response()->json(['error' => 'Quote not found'], 404);
-
         } catch (\Exception $e) {
             // Log and return error for unexpected failures (500)
             return response()->json([
-                'error' => 'Error deleting quote: '.$e->getMessage(),
+                'error' => 'Error deleting quote: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -482,5 +482,46 @@ class QuoteController extends Controller
                 'description' => $item['description'] ?? null,
             ];
         }, $items);
+    }
+
+    /**
+     * Duplicate an existing quote
+     * 
+     * @param Request $request
+     * @param int $quoteId
+     * @return JsonResponse
+     */
+    public function duplicate(Request $request, int $id): JsonResponse
+    {
+        try {
+            $authenticatedUser = $request->attributes->get('auth_user');
+            if (! $authenticatedUser) {
+                return response()->json(['error' => 'User not authenticated'], 401);
+            }
+            
+            $subjectSuffix = $request->get('suffix', '(Copy)');
+
+            $newQuoteId = $this->duplicateQuoteUseCase->execute($id, $authenticatedUser->getId(), $subjectSuffix);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Quote duplicated successfully',
+                'data' => [
+                    'quoteId' => $newQuoteId,
+                    'redirectUrl' => "/dashboard/quotes/{$newQuoteId}",
+                ],
+            ],201);
+
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to duplicate quote',
+            ], 500);
+        }
     }
 }

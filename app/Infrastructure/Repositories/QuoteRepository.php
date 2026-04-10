@@ -438,7 +438,7 @@ class QuoteRepository implements QuoteRepositoryInterface
         );
     }
 
-    private function generateQuoteId(): int
+    public function generateQuoteId(): int
     {
         $maxId = DB::connection(self::CONNECTION)
             ->table(self::TABLE)

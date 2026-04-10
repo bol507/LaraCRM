@@ -155,7 +155,7 @@ class ClientMapper
                 'smownerid' => $client->smownerid ?? 1,
                 'modifiedby' => $client->smownerid ?? 1,
                 'setype' => 'Accounts',
-                'description' => null,
+                'description' => $client->description,
                 'createdtime' => $isUpdate ? null : $now,
                 'modifiedtime' => $now,
                 'deleted' => 0,

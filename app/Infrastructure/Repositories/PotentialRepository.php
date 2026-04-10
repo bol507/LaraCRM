@@ -103,7 +103,7 @@ class PotentialRepository implements OpportunityRepositoryInterface
             ->table(self::TABLE)
             ->count();
 
-        return 'POT'.date('Y').str_pad((string) ($count + 1), 4, '0', STR_PAD_LEFT);
+        return 'POT' . date('Y') . str_pad((string) ($count + 1), 4, '0', STR_PAD_LEFT);
     }
 
     // =========================================================================
@@ -117,8 +117,30 @@ class PotentialRepository implements OpportunityRepositoryInterface
         int $page = 1,
         int $perPage = 20,
         ?string $search = null,
-        ?int $accountId = null
+        ?int $accountId = null,
+        ?string $sortBy = null,
+        ?string $sortOrder = null
     ): LengthAwarePaginator {
+        $allowedSortColumns = [
+            'potentialname',
+            'amount',
+            'closingdate',
+            'sales_stage',
+            'probability',
+            'createdtime',
+            'modifiedtime',
+            'accountname',
+            'first_name',
+            'last_name',
+            'user_name',
+        ];
+
+        $sortBy = $sortBy && in_array($sortBy, $allowedSortColumns, true)
+            ? $sortBy
+            : 'createdtime';
+
+        $sortOrder = strtoupper($sortOrder) === 'ASC' ? 'ASC' : 'DESC';
+
         $query = DB::connection('vtiger')
             ->table('vtiger_potential')
             ->join('vtiger_crmentity', 'vtiger_potential.potentialid', '=', 'vtiger_crmentity.crmid')
@@ -139,7 +161,7 @@ class PotentialRepository implements OpportunityRepositoryInterface
             )
             ->where('vtiger_crmentity.deleted', 0)
             ->where('vtiger_crmentity.setype', 'Potentials');
-
+        //filters
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('vtiger_potential.potentialname', 'LIKE', "%{$search}%")
@@ -151,13 +173,27 @@ class PotentialRepository implements OpportunityRepositoryInterface
             $query->where('vtiger_potential.related_to', $accountId);
         }
 
+        $sortColumnMap = [
+            'accountname' => 'vtiger_account.accountname',
+            'first_name' => 'vtiger_users.first_name',
+            'last_name' => 'vtiger_users.last_name',
+            'user_name' => 'vtiger_users.user_name',
+            'createdtime' => 'vtiger_crmentity.createdtime',
+            'modifiedtime' => 'vtiger_crmentity.modifiedtime',
+
+        ];
+
+        $sortColumn = $sortColumnMap[$sortBy] ?? "vtiger_potential.{$sortBy}";
+        $query->orderBy($sortColumn, $sortOrder);
+
         $total = $query->count();
-        $items = $query->forPage($page, $perPage)->orderBy('vtiger_potential.potentialname')->get();
+        //$items = $query->forPage($page, $perPage)->orderBy('vtiger_potential.potentialname')->get();
+        $items = $query->forPage($page, $perPage)->get();
 
         $opportunities = $items->map(function ($row) {
             $userName = null;
             if ($row->first_name || $row->last_name) {
-                $userName = trim(($row->first_name ?? '').' '.($row->last_name ?? ''));
+                $userName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
             } elseif ($row->user_name) {
                 $userName = $row->user_name;
             }

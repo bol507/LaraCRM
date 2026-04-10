@@ -40,231 +40,72 @@ use DomainException;
  */
 class Comment
 {
-    /**
-     * Unique identifier for the comment
-     * 
-     * @var int
-     */
-    private int $commentid;
+
 
     /**
-     * Main text content of the comment
-     * 
-     * Supports plain text. Maximum length: 65,000 characters
-     * (Vtiger uses TEXT field with ~65,535 bytes limit).
-     * 
-     * @var string
-     */
-    private string $commentcontent;
-
-    /**
-     * ID of the related record this comment belongs to
-     * 
-     * Typically references a task ID (vtiger_activity.activityid),
-     * but can reference any CRM entity via vtiger_crmentity.
-     * 
-     * @var int
-     */
-    private int $related_to;
-
-    /**
-     * ID of parent comment for hierarchical threading
-     * 
-     * Used to create comment replies. Null indicates a top-level comment.
-     * 
-     * @var int|null
-     */
-    private ?int $parent_comments;
-
-    /**
-     * ID of customer who created the comment
-     * 
-     * Only populated when comments are created through customer portal.
-     * Null for internal user comments.
-     * 
-     * @var int|null
-     */
-    private ?int $customer;
-
-    /**
-     * ID of user who created the comment
-     * 
-     * References vtiger_users.id for internal users.
-     * Null only when comment is created by anonymous customer.
-     * 
-     * @var int|null
-     */
-    private ?int $userid;
-
-    /**
-     * Reason provided when editing the comment
-     * 
-     * Populated when a user modifies an existing comment.
-     * Used for audit trail and change tracking.
-     * 
-     * @var string|null
-     */
-    private ?string $reasontoedit;
-
-    /**
-     * Visibility flag for comment privacy
-     * 
-     * Values:
-     * - 1: Private comment (visible only to internal users)
-     * - 0: Public comment (visible to customers in portal)
-     * - null: Default visibility based on module settings
-     * 
-     * @var int|null
-     */
-    private ?int $is_private;
-
-    /**
-     * Name of attached file (if any)
-     * 
-     * Stores filename when a file is attached to the comment.
-     * File itself is stored in vtiger_attachments table.
-     * 
-     * @var string|null
-     */
-    private ?string $filename;
-
-    /**
-     * ID of related email (if comment came from email)
-     * 
-     * Populated when comments are created automatically from email replies.
-     * References vtiger_ossmailview.mailviewid.
-     * 
-     * @var int|null
-     */
-    private ?int $related_email_id;
-
-    /**
-     * Creation timestamp
-     * 
-     * Format: YYYY-MM-DD HH:MM:SS
-     * Set automatically by database on insert.
-     * 
-     * @var string|null
-     */
-    private ?string $createdtime;
-
-    /**
-     * Last modification timestamp
-     * 
-     * Format: YYYY-MM-DD HH:MM:SS
-     * Updated automatically when comment is edited.
-     * 
-     * @var string|null
-     */
-    private ?string $modifiedtime;
-
-    /**
-     * Name of user assigned to the related record
-     * 
-     * Cached value for performance (avoid joins when displaying comments).
-     * Populated from vtiger_users.first_name + vtiger_users.last_name.
-     * 
-     * @var string|null
-     */
-    private ?string $assigned_user_name;
-
-    /**
-     * Email of user assigned to the related record
-     * 
-     * Cached value for performance and notifications.
-     * Populated from vtiger_users.email1.
-     * 
-     * @var string|null
-     */
-    private ?string $assigned_user_email;
-
-    /**
-     * Módulo de la entidad relacionada (Project, Calendar, Accounts, etc.)
+     * Comment constructor.
      *
-     * @var string|null
-     */
-    private ?string $relatedModule = null;
-
-    /**
-     * Constructor for Comment entity
-     * 
-     * Validates input data and initializes the entity state.
-     * 
-     * @param int $commentid Unique identifier for the comment
-     * @param string $commentcontent Main text content of the comment
-     * @param int $related_to ID of the related record this comment belongs to
-     * @param int|null $parent_comments ID of parent comment for threading (optional)
-     * @param int|null $customer ID of customer who created the comment (optional)
-     * @param int|null $userid ID of user who created the comment (optional)
-     * @param string|null $reasontoedit Reason for editing the comment (optional)
-     * @param int|null $is_private Visibility flag (1=private, 0=public) (optional)
-     * @param string|null $filename Attached file name (optional)
-     * @param int|null $related_email_id ID of related email (optional)
-     * @param string|null $createdtime Creation timestamp (optional)
-     * @param string|null $modifiedtime Last modification timestamp (optional)
-     * @param string|null $assigned_user_name Name of assigned user (optional)
-     * @param string|null $assigned_user_email Email of assigned user (optional)
-     * @param string|null $relatedModule Module of related entity (optional)
-     * 
-     * @throws InvalidArgumentException If validation fails
+     * Creates an immutable Comment entity instance with all comment data.
+     * All properties are marked as private readonly to ensure immutability
+     * after instantiation, promoting safer data handling and preventing
+     * accidental modifications.
+     *
+     * @param  int  $commentid  The unique identifier of the comment.
+     * @param  string  $commentcontent  The content/text of the comment.
+     * @param  int  $related_to  The ID of the related record (task, project, etc.).
+     * @param  int|null  $parent_comments  The ID of the parent comment if this is a reply.
+     * @param  int|null  $customer  The customer ID associated with the comment.
+     * @param  int|null  $userid  The ID of the user who created the comment.
+     * @param  string|null  $reasontoedit  Reason for editing the comment (if applicable).
+     * @param  int|null  $is_private  Flag indicating if the comment is private (1) or public (0).
+     * @param  string|null  $filename  Attachment filename if the comment has an attachment.
+     * @param  int|null  $related_email_id  Related email ID if associated with an email.
+     * @param  string|null  $createdtime  Timestamp when the comment was created.
+     * @param  string|null  $modifiedtime  Timestamp when the comment was last modified.
+     * @param  string|null  $assigned_user_name  Name of the user who created the comment.
+     * @param  string|null  $assigned_user_email  Email of the user who created the comment.
+     * @param  string|null  $relatedModule  The module type of the related record (e.g., 'Tasks', 'Project').
+     * @param  string|null  $userName  Alternative user name field (for compatibility).
+     *
+     * @throws InvalidArgumentException If commentid, content, or related_to are invalid
      */
     public function __construct(
-        int $commentid,
-        string $commentcontent,
-        int $related_to,
-        ?int $parent_comments = null,
-        ?int $customer = null,
-        ?int $userid = null,
-        ?string $reasontoedit = null,
-        ?int $is_private = null,
-        ?string $filename = null,
-        ?int $related_email_id = null,
-        ?string $createdtime = null,
-        ?string $modifiedtime = null,
-        ?string $assigned_user_name = null,
-        ?string $assigned_user_email = null,
-        ?string $relatedModule = null
+        private readonly int $commentid,
+        private readonly string $commentcontent,
+        private readonly int $related_to,
+        private readonly ?int $parent_comments = null,
+        private readonly ?int $customer = null,
+        private readonly ?int $userid = null,
+        private readonly ?string $reasontoedit = null,
+        private readonly ?int $is_private = null,
+        private readonly ?string $filename = null,
+        private readonly ?int $related_email_id = null,
+        private readonly ?string $createdtime = null,
+        private readonly ?string $modifiedtime = null,
+        private readonly ?string $assigned_user_name = null,
+        private readonly ?string $assigned_user_email = null,
+        private readonly ?string $relatedModule = null,
+        private readonly ?string $userName = null,
+        private readonly ?string $userEmail = null,
     ) {
+
         $this->validateCommentId($commentid);
         $this->validateContent($commentcontent);
         $this->validateRelatedTo($related_to);
-
-        $this->commentid = $commentid;
-        $this->commentcontent = $commentcontent;
-        $this->related_to = $related_to;
-        $this->parent_comments = $parent_comments;
-        $this->customer = $customer;
-        $this->userid = $userid;
-        $this->reasontoedit = $reasontoedit;
-        $this->is_private = $is_private;
-        $this->filename = $filename;
-        $this->related_email_id = $related_email_id;
-        $this->createdtime = $createdtime;
-        $this->modifiedtime = $modifiedtime;
-        $this->assigned_user_name = $assigned_user_name;
-        $this->assigned_user_email = $assigned_user_email;
-        $this->relatedModule = $relatedModule;
     }
+
 
     // ========================================================================
     // GETTERS (Read-only access to entity state)
     // ========================================================================
 
-    /**
-     * Get the unique identifier for this comment
-     * 
-     * @return int Comment ID
-     */
+
     public function getId(): int
     {
         return $this->commentid;
     }
 
-    /**
-     * Get the main text content of the comment
-     * 
-     * @return string Comment content
-     */
+
     public function getContent(): string
     {
         return $this->commentcontent;
@@ -290,71 +131,48 @@ class Comment
         return $this->parent_comments;
     }
 
-    /**
-     * Get the ID of the related record (e.g., task ID)
-     * 
-     * @return int Related record ID
-     */
+
     public function getTaskId(): int
     {
         return $this->related_to;
     }
 
-    /**
-     * Get the ID of the parent comment (for threaded replies)
-     * 
-     * @return int|null Parent comment ID, or null if top-level
-     */
+
     public function getParentCommentId(): ?int
     {
         return $this->parent_comments;
     }
 
-    /**
-     * Get the ID of the customer who created this comment
-     * 
-     * @return int|null Customer ID, or null if created by internal user
-     */
+
     public function getCustomerId(): ?int
     {
         return $this->customer;
     }
 
-    /**
-     * Get the ID of the user who created this comment
-     * 
-     * @return int|null User ID, or null if created by anonymous customer
-     */
+
     public function getUserId(): ?int
     {
         return $this->userid;
     }
 
-    /**
-     * Get the reason provided when this comment was edited
-     * 
-     * @return string|null Edit reason, or null if never edited
-     */
+
     public function getReasonToEdit(): ?string
     {
         return $this->reasontoedit;
     }
 
-    /**
-     * Get the module of the related entity
-     *
-     * @return string|null Module name (Project, Calendar, Accounts, etc.)
-     */
+
     public function getRelatedModule(): ?string
     {
         return $this->relatedModule;
     }
 
-    /**
-     * Get the display name for the related entity type
-     *
-     * @return string Human-readable entity type name
-     */
+    public function getUserName(): ?string
+    {
+        return $this->userName ?? $this->assigned_user_name;
+    }
+
+
     public function getRelatedEntityType(): string
     {
         return match ($this->relatedModule) {
@@ -369,11 +187,7 @@ class Comment
         };
     }
 
-    /**
-     * Get the icon for the related entity type
-     *
-     * @return string Emoji icon
-     */
+
     public function getRelatedEntityIcon(): string
     {
         return match ($this->relatedModule) {
@@ -388,74 +202,46 @@ class Comment
         };
     }
 
-    /**
-     * Check if this comment is marked as private
-     * 
-     * @return bool True if private, false if public
-     */
+
     public function isPrivate(): bool
     {
         return $this->is_private === 1;
     }
 
-    /**
-     * Get the name of the attached file (if any)
-     * 
-     * @return string|null Filename, or null if no attachment
-     */
+
     public function getFilename(): ?string
     {
         return $this->filename;
     }
 
-    /**
-     * Get the ID of the related email (if comment came from email)
-     * 
-     * @return int|null Email ID, or null if not email-related
-     */
+
     public function getRelatedEmailId(): ?int
     {
         return $this->related_email_id;
     }
 
-    /**
-     * Get the creation timestamp
-     * 
-     * @return string|null Timestamp in YYYY-MM-DD HH:MM:SS format, or null
-     */
+
     public function getCreatedAt(): ?string
     {
         return $this->createdtime;
     }
 
-    /**
-     * Get the last modification timestamp
-     * 
-     * @return string|null Timestamp in YYYY-MM-DD HH:MM:SS format, or null
-     */
+
     public function getUpdatedAt(): ?string
     {
         return $this->modifiedtime;
     }
 
-    /**
-     * Get the name of the user assigned to the related record
-     * 
-     * @return string|null User name, or null if not available
-     */
+
     public function getAssignedUserName(): ?string
     {
-        return $this->assigned_user_name;
+        return $this->assigned_user_name ?? $this->userName ?? 'Usuario';
     }
 
-    /**
-     * Get the email of the user assigned to the related record
-     * 
-     * @return string|null User email, or null if not available
-     */
+
     public function getAssignedUserEmail(): ?string
     {
-        return $this->assigned_user_email;
+        return $this->assigned_user_email ?? $this->userName ?? $this->userEmail;
     }
 
     // ========================================================================
@@ -544,7 +330,7 @@ class Comment
      */
     public function getAuthorName(): string
     {
-        return $this->assigned_user_name ?? 'Usuario';
+        return $this->assigned_user_name ?? $this->userName ?? 'Usuario';
     }
 
     /**
@@ -659,8 +445,8 @@ class Comment
             'relatedEntityIcon' => $this->getRelatedEntityIcon(),
             'content' => $this->commentcontent,
             'userId' => $this->userid,
-            'userName' => $this->assigned_user_name,
-            'userEmail' => $this->assigned_user_email,
+            'userName' => $this->getAssignedUserName(),
+            'userEmail' => $this->getAssignedUserEmail(),
             'createdAt' => $this->createdtime,
             'updatedAt' => $this->modifiedtime,
             'parentCommentId' => $this->parent_comments,

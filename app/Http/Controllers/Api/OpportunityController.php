@@ -107,15 +107,11 @@ class OpportunityController extends Controller
         $search = $request->get('search');
 
         $accountId = $request->get('account_id') ? (int) $request->get('account_id') : null;
-
-        Log::info('🔍 Opportunities request', [
-            'page' => $page,
-            'per_page' => $perPage,
-            'search' => $search,
-            'account_id' => $accountId,  
-        ]);
+        $sortBy = $request->get('sort_by');
+        $sortOrder = $request->get('sort_order');
+        
         //  Execute use case with validated parameters
-        $paginator = $this->getAllOpportunitiesUseCase->execute($page, $perPage, $search, $accountId);
+        $paginator = $this->getAllOpportunitiesUseCase->execute($page, $perPage, $search, $accountId, $sortBy, $sortOrder);
 
         //  Transform Opportunity entities to DTOs for API response
         $data = array_map(function ($opportunity) {

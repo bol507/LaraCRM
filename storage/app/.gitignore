@@ -4,3 +4,4 @@
 !.gitignore
 google-drive-config.json
 google-oauth-credentials.json
+google-service-account.json

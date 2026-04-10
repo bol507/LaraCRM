@@ -38,18 +38,10 @@ use RuntimeException;
  */
 class GetCommentUseCase
 {
-    /**
-     * Comment repository for persistence operations
-     * 
-     * @var CommentRepositoryInterface
-     */
+   
     private readonly CommentRepositoryInterface $repository;
 
-    /**
-     * Constructor with dependency injection
-     * 
-     * @param CommentRepositoryInterface $repository Repository implementation for comment persistence
-     */
+    
     public function __construct(CommentRepositoryInterface $repository)
     {
         $this->repository = $repository;
@@ -87,20 +79,16 @@ class GetCommentUseCase
      */
     public function execute(int $commentId, int $userId): Comment
     {
-        // Validate input parameters
+        
         $this->validateParameters($commentId, $userId);
-
-        // Fetch the comment from repository
         $comment = $this->repository->findById($commentId);
         
         if (!$comment) {
             throw new RuntimeException("Comment {$commentId} not found or has been deleted");
         }
 
-        // Business rule: Verify user has permission to view this comment
         $this->verifyViewPermission($comment, $userId);
 
-        // Return the comment entity
         return $comment;
     }
 
@@ -142,7 +130,7 @@ class GetCommentUseCase
      */
     private function verifyViewPermission(Comment $comment, int $userId): void
     {
-        // Use the domain entity's built-in visibility check
+       
         if (!$comment->isVisibleTo($userId, $this->isInternalUser($userId))) {
             throw new InvalidArgumentException(
                 "User {$userId} is not authorized to view comment {$comment->getId()}. " .
@@ -150,12 +138,6 @@ class GetCommentUseCase
             );
         }
 
-        // Optional: Add record-level permission checks
-        // if (!$this->hasAccessToRelatedRecord($comment->getTaskId(), $userId)) {
-        //     throw new InvalidArgumentException(
-        //         "User does not have access to the related record"
-        //     );
-        // }
     }
 
     /**
@@ -168,8 +150,7 @@ class GetCommentUseCase
      */
     private function isInternalUser(int $userId): bool
     {
-        // TODO: Implement based on your auth system
-        // For now, assume all authenticated users are internal
+
         return true;
     }
 
@@ -184,8 +165,7 @@ class GetCommentUseCase
      */
     private function hasAccessToRelatedRecord(int $relatedId, int $userId): bool
     {
-        // TODO: Implement based on your permission system
-        // Default: assume access is granted
+
         return true;
     }
 }

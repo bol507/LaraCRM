@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\GoogleDrive;
 
+use App\Application\Contracts\GoogleDriveServiceInterface;
 use Google\Client;
 use Google\Service\Drive;
 use Google\Service\Drive\DriveFile;
@@ -19,35 +20,14 @@ use Illuminate\Support\Str;
  * @package App\Services
  * @see https://developers.google.com/drive/api/guides/about-sdk
  */
-class GoogleDriveService
+class GoogleDriveServiceAccount implements GoogleDriveServiceInterface
 {
-    /**
-     * Google API client instance.
-     *
-     * @var Client
-     */
-    private $client;
-
-    /**
-     * Google Drive service instance.
-     *
-     * @var Drive
-     */
-    private $driveService;
-
-    /**
-     * Root folder ID in Google Drive where files will be stored.
-     *
-     * @var string|null
-     */
-    private $folderId;
-
-    /**
-     * Configuration array containing refresh token and folder ID.
-     *
-     * @var array|null
-     */
-    private $config;
+    
+    private Client $client;
+    private Drive $driveService;
+    private string $folderId;
+    private ?string $sharedDriveId;
+    private array $config;
 
     /**
      * Constructor.
@@ -58,126 +38,47 @@ class GoogleDriveService
      * @throws \Exception If configuration files are missing or invalid.
      * @throws \Exception If token refresh fails.
      */
-    public function __construct()
+    public function __construct(?array $config = null)
     {
-        // Load configuration from secure storage
-        $configPath = storage_path('app/google-drive-config.json');
-
-        if (!file_exists($configPath)) {
-            throw new \Exception(
-                'Google Drive configuration file not found. ' .
-                    'Run: php artisan drive:auth'
-            );
-        }
-
-        $config = json_decode(file_get_contents($configPath), true);
-
-        if (!$config || !isset($config['refresh_token'])) {
-            throw new \Exception(
-                'Invalid configuration. Missing "refresh_token" in google-drive-config.json. ' .
-                    'Run: php artisan drive:auth'
-            );
-        }
-
-        // Assign config to class property for later use
-        $this->config = $config;
-
-        $this->folderId = $config['folder_id'] ?? null;
-
-        if (!$this->folderId) {
-            throw new \Exception(
-                'Folder ID not configured. Edit google-drive-config.json and add "folder_id"'
-            );
-        }
-
-        // Load OAuth credentials
-        $credentialsPath = storage_path('app/google-oauth-credentials.json');
-
-        if (!file_exists($credentialsPath)) {
-            throw new \Exception(
-                'OAuth credentials not found. ' .
-                    'Download the JSON from Google Cloud Console and save as: google-oauth-credentials.json'
-            );
-        }
-
-        $credentials = json_decode(file_get_contents($credentialsPath), true);
-
-        $clientId = null;
-        $clientSecret = null;
-
-        // Extract client_id and client_secret (support both "installed" and "web" formats)
-        if (isset($credentials['installed']) && is_array($credentials['installed'])) {
-            $clientId = $credentials['installed']['client_id'] ?? null;
-            $clientSecret = $credentials['installed']['client_secret'] ?? null;
-        } elseif (isset($credentials['web']) && is_array($credentials['web'])) {
-            $clientId = $credentials['web']['client_id'] ?? null;
-            $clientSecret = $credentials['web']['client_secret'] ?? null;
-        }
-
-        if (!$clientId) {
-            Log::error('Google OAuth: client_id not found in credentials file', [
-                'credentials_keys' => array_keys($credentials),
-                'file_path' => $credentialsPath,
-            ]);
-            throw new \Exception(
-                'OAuth client_id not found. Ensure google-oauth-credentials.json ' .
-                    'contains "installed.client_id" or "web.client_id"'
-            );
-        }
-
-        if (!$clientSecret) {
-            Log::error('Google OAuth: client_secret not found in credentials file', [
-                'credentials_keys' => array_keys($credentials),
-                'file_path' => $credentialsPath,
-            ]);
-            throw new \Exception(
-                'OAuth client_secret not found. Ensure google-oauth-credentials.json ' .
-                    'contains "installed.client_secret" or "web.client_secret"'
-            );
-        }
-
-        Log::info('Google OAuth credentials loaded successfully', [
-            'client_id_prefix' => substr($clientId, 0, 20) . '...',
-        ]);
-
-        // Configure OAuth client
-        $this->client = new Client();
-        $this->client->setClientId($clientId);
-        $this->client->setClientSecret($clientSecret);
-        $this->client->setRedirectUri('urn:ietf:wg:oauth:2.0:oob');
-        $this->client->addScope([Drive::DRIVE_FILE, Drive::DRIVE_METADATA_READONLY]);
-        $this->client->setAccessType('offline');
-        $this->client->setPrompt('consent');
-
-        // Refresh access token using refresh token
-        try {
-            $this->client->fetchAccessTokenWithRefreshToken($config['refresh_token']);
-
-            if ($this->client->isAccessTokenExpired()) {
-                throw new \Exception('Could not renew access token with refresh token');
+        
+        if ($config !== null) {
+            $this->config = $config;
+        } else {
+            $configPath = storage_path('app/google-drive-config.json');
+            if (!file_exists($configPath)) {
+                throw new \Exception('Config file not found: google-drive-config.json');
             }
-        } catch (\Google\Exception $e) {
-            Log::error('Google API exception during token refresh: ' . $e->getMessage(), [
-                'error_code' => $e->getCode(),
-                'error_details' => $e->getTraceAsString(),
-            ]);
+            $this->config = json_decode(file_get_contents($configPath), true);
+        }
+
+        
+        $this->folderId = $this->config['folder_id'] ?? null;
+        if (!$this->folderId) {
+            throw new \Exception('Folder ID not configured in google-drive-config.json');
+        }
+
+        
+        $this->sharedDriveId = $this->config['shared_drive_id'] ?? null;
+
+        
+        $keyPath = storage_path('app/google-service-account.json');
+        if (!file_exists($keyPath)) {
             throw new \Exception(
-                'Google Drive authentication failed. ' .
-                    'Run: php artisan drive:auth to renew credentials'
-            );
-        } catch (\Exception $e) {
-            Log::error('Generic exception during token refresh: ' . $e->getMessage(), [
-                'exception_class' => get_class($e),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            throw new \Exception(
-                'Google Drive authentication failed: ' . $e->getMessage()
+                'Service Account key not found. ' .
+                'Download from Google Cloud Console and save as: google-service-account.json'
             );
         }
 
-        // Initialize Drive service
+        
+        $this->client = new Client();
+        $this->client->setAuthConfig($keyPath);
+        $this->client->addScope([
+            Drive::DRIVE_FILE,
+            Drive::DRIVE_METADATA_READONLY,
+        ]);
+                
         $this->driveService = new Drive($this->client);
-    }
+    }  
 
     /**
      * Refresh access token using the stored refresh token.
@@ -501,5 +402,10 @@ class GoogleDriveService
     {
         // Escape single quotes by doubling them (Google Drive API convention)
         return str_replace("'", "''", $value);
+    }
+
+    public function getAuthType(): string
+    {
+        return 'service_account';
     }
 }

@@ -68,8 +68,10 @@ Route::middleware('jwt')->group(function () {
     Route::get('/quotes', [QuoteController::class, 'index']);
     Route::post('/quotes', [QuoteController::class, 'store']);
     Route::get('/quotes/{id}', [QuoteController::class, 'show']);
+    
     Route::put('/quotes/{id}', [QuoteController::class, 'update']);
     Route::delete('/quotes/{id}', [QuoteController::class, 'destroy']);
+    Route::post('/quotes/{id}/duplicate', [QuoteController::class, 'duplicate']);
     Route::get('/quotes/{quoteId}/pdf/download', [QuotePDFController::class, 'generatePDF'])
         ->name('quotes.pdf.download');
 

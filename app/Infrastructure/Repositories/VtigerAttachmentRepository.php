@@ -2,9 +2,9 @@
 
 namespace App\Infrastructure\Repositories;
 
+use App\Application\Contracts\GoogleDriveServiceInterface;
 use App\Application\Repositories\AttachmentRepositoryInterface;
 use App\Domain\Entities\Attachment;
-use App\Services\GoogleDriveService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
@@ -71,7 +71,7 @@ class VtigerAttachmentRepository implements AttachmentRepositoryInterface
      * @return void
      */
     public function __construct(
-        private readonly GoogleDriveService $driveService
+        private readonly GoogleDriveServiceInterface $driveService
     ) {}
 
     /**

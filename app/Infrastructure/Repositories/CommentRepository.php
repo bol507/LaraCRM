@@ -139,7 +139,8 @@ class CommentRepository implements CommentRepositoryInterface
                 'vtiger_crmentity.smcreatorid',
                 'vtiger_crmentity.smownerid',
                 'vtiger_crmentity.deleted as crm_deleted',
-                DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as user_name")
+                'vtiger_users.user_name as user_name',
+                'vtiger_users.email1 as user_email',
             )
             ->where('vtiger_modcomments.related_to', $relatedId)
             ->where('vtiger_crmentity.deleted', 0);
@@ -159,6 +160,9 @@ class CommentRepository implements CommentRepositoryInterface
                 createdtime: $row->createdtime,
                 modifiedtime: $row->modifiedtime,
                 is_private: $row->is_private === '1' ? 1 : 0,
+                assigned_user_name: $row->user_name ?? null,
+                assigned_user_email: $row->user_email ?? null,
+                userName: $row->user_name ?? null,
             );
         });
 
@@ -188,7 +192,9 @@ class CommentRepository implements CommentRepositoryInterface
                 'vtiger_modcomments.*',
                 'vtiger_crmentity.createdtime',
                 'vtiger_crmentity.modifiedtime',
-                'vtiger_crmentity.deleted as crm_deleted'
+                'vtiger_crmentity.deleted as crm_deleted',
+                'vtiger_users.user_name as user_name',
+                'vtiger_users.email1 as user_email',
             )
             ->where('vtiger_modcomments.modcommentsid', $commentId)
             ->where('vtiger_crmentity.deleted', 0)
@@ -207,6 +213,9 @@ class CommentRepository implements CommentRepositoryInterface
             createdtime: $row->createdtime,
             modifiedtime: $row->modifiedtime,
             is_private: $row->is_private === '1' ? 1 : 0,
+            assigned_user_name: $row->user_name ?? null,
+            assigned_user_email: $row->user_email ?? null,
+            userName: $row->user_name ?? null,
         );
     }
 

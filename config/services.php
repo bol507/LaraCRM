@@ -38,5 +38,8 @@ return [
     'google_drive' => [
         'folder_id' => env('GOOGLE_DRIVE_FOLDER_ID'),
         'config_path' => storage_path('app/google-drive-config.json'), 
+        'auth_type' => env('GOOGLE_DRIVE_AUTH_TYPE', 'oauth'),  // 'oauth' o 'service_account'
+        'shared_drive_id' => env('GOOGLE_DRIVE_SHARED_DRIVE_ID'), //only for service_account
+        'refresh_token' => env('GOOGLE_DRIVE_REFRESH_TOKEN'), //only for OAuth
     ],
 ];

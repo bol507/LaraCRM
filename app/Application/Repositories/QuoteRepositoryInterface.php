@@ -456,4 +456,11 @@ interface QuoteRepositoryInterface
         ?string $search = null,
         ?int $accountId = null
     ): LengthAwarePaginator;
+
+    /**
+     * Get next available quote ID
+     * 
+     * @return int Next quote ID
+     */
+    public function generateQuoteId(): int;
 }

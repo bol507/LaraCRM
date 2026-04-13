@@ -117,15 +117,8 @@ class GetCommentsByRelatedIdUseCase
         int $page = 1,
         int $perPage = 50
     ): LengthAwarePaginator {
-        // ✅ Validate input parameters (application-level validation)
-        $this->validateParameters($relatedId, $page, $perPage);
-
-        // ✅ Delegate to repository layer for data retrieval
-        // The repository handles:
-        // - Database queries with proper joins
-        // - Soft delete filtering (deleted = 0)
-        // - Entity mapping (row → Comment)
-        // - Pagination via Laravel's LengthAwarePaginator
+        
+        $this->validateParameters($relatedId, $page, $perPage);        
         return $this->repository->getByRelatedId($relatedId, $module, $page, $perPage);
     }
 

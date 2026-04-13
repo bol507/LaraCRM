@@ -35,70 +35,77 @@ class DuplicateQuoteUseCase
      * @throws InvalidArgumentException If the quote ID is invalid or not found
      * @throws RuntimeException If duplication fails
      */
-    public function execute(int $quoteId, ?int $userId = null,  string $subjectSuffix = '(Copy)'): int
+    public function execute(int $quoteId, ?int $userId = null, string $subjectSuffix = '(Copy)'): int
     {
         if ($quoteId <= 0) {
             throw new InvalidArgumentException('Quote ID must be positive');
         }
 
         $userId = $userId ?? CurrentUserService::idOr(1);
-
-        // 1. Fetch original quote with all items
         $originalQuote = $this->quoteRepository->findById($quoteId);
-        
+
         if (!$originalQuote) {
             throw new InvalidArgumentException("Quote {$quoteId} not found");
         }
 
-        // 2. Prepare new quote data (exclude quoteid, quoteno - will be auto-generated)
-        $newQuoteData = [
-            'quoteid' => $this->quoteRepository->generateQuoteId(),  // ← Nuevo ID
-            'subject' => $originalQuote->subject . ' ' . $subjectSuffix,
-            'potentialid' => $originalQuote->potential_name ? $this->getPotentialIdByName($originalQuote->potential_name) : null,
-            'accountid' => $originalQuote->accountid,  // ← Mismo cliente
-            'quotestage' => 'Draft',  // ← Resetear a Draft (configurable)
-            'validtill' => $originalQuote->validtill,
-            'subtotal' => $originalQuote->subtotal,
-            'total' => $originalQuote->total,
-            'description' => $originalQuote->description,
-            'assigned_user_id' => $userId,  // ← Usuario actual como asignado
-            'createdtime' => now()->format('Y-m-d H:i:s'),
-            'modifiedtime' => now()->format('Y-m-d H:i:s'),
-        ];
+        if (empty($originalQuote->accountid)) {
+            throw new RuntimeException("Cannot duplicate quote {$quoteId}: missing accountid");
+        }
 
-        // 3. Prepare items for insertion (reusing repository logic)
         $itemsData = [];
         if (!empty($originalQuote->items) && is_array($originalQuote->items)) {
             foreach ($originalQuote->items as $index => $item) {
+                if (empty($item['productname']) && empty($item['productid'])) {
+                    Log::warning("Skipping invalid item {$index} in quote {$quoteId}", ['item' => $item]);
+                    continue;
+                }
+
                 $itemsData[] = [
                     'productid' => $item['productid'] ?? null,
                     'sequence_no' => $item['sequence_no'] ?? ($index + 1),
-                    'productname' => $item['productname'] ?? '',
                     'quantity' => $item['quantity'] ?? 1,
                     'listprice' => $item['listprice'] ?? 0,
                     'discount_percent' => $item['discount_percent'] ?? 0,
-                    'description' => $item['description'] ?? '',
+                    'productname' => $item['productname'] ?? '',
+                    'description' => $item['description'] ?? null,
+                    'comment' => $item['description'] ?? null,
                 ];
             }
         }
 
-        // 4. Create new quote in transaction
+        $newQuoteData = [
+            'subject' => $originalQuote->subject . ' ' . $subjectSuffix,
+            'potentialid' => $originalQuote->potentialid ?? null, 
+            'accountid' => $originalQuote->accountid,
+            'quotestage' => 'Draft',
+            'validtill' => $originalQuote->validtill,
+            'description' => $originalQuote->description,
+            'taxtype' => $originalQuote->taxtype ?? 'individual',
+            'currency_id' => $originalQuote->currency_id ?? 1,
+            'conversion_rate' => $originalQuote->conversion_rate ?? 1.000,
+            'discount_percent' => $originalQuote->discount_percent ?? null,
+            'discount_amount' => $originalQuote->discount_amount ?? null,
+            'assigned_user_id' => $userId,
+        ];
+
         return DB::connection('vtiger')->transaction(function () use ($newQuoteData, $itemsData, $userId, $quoteId) {
-            // Insert new quote with items (reusing existing repository method)
-            $newQuoteId = $this->quoteRepository->insert($newQuoteData, $itemsData);
-            
+            $newQuoteId = $this->quoteRepository->duplicate(
+                baseData: $newQuoteData,
+                itemsData: $itemsData,
+                createdByUserId: $userId
+            );
+
             if (!$newQuoteId) {
                 throw new RuntimeException('Failed to create new quote');
             }
 
-            // Log activity for audit trail
             $this->logActivity($newQuoteId, $userId, $quoteId);
 
             return $newQuoteId;
         });
     }
 
-   /**
+    /**
      * Helper to get potential ID by name (if needed for potentialid field)
      */
     private function getPotentialIdByName(string $potentialName): ?int
@@ -107,7 +114,7 @@ class DuplicateQuoteUseCase
             ->table('vtiger_potential')
             ->where('potentialname', $potentialName)
             ->first();
-        
+
         return $potential?->potentialid ? (int) $potential->potentialid : null;
     }
 

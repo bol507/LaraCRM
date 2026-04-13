@@ -73,31 +73,33 @@ class CreateQuoteUseCase
             );
 
             // 3. Insertar vtiger_quotes
-            $this->quote->insert([
+            $this->quote->insert(
+            data: [
                 'quoteid' => $quoteId,
                 'quote_no' => $this->quote->getNextQuoteNumber(),
                 'subject' => $request->subject,
                 'potentialid' => $request->potentialid ?? null,
-                'quotestage' => $request->quotestage ?? 'Draft',
+                'quotestage' => 'Draft',
                 'validtill' => $request->validtill ?? null,
-                'contactid' => $request->contactid ?? null,
                 'accountid' => $request->accountid ?? null,
-                'subtotal' => $request->subtotal ?? null,
-                'carrier' => $request->carrier ?? null,
-                'shipping' => $request->shipping ?? null,
-                'inventorymanager' => $request->inventorymanager ?? null,
-                'type' => $request->type ?? null,
-                'adjustment' => $request->adjustment ?? null,
-                'total' => $request->total ?? null,
-                'taxtype' => $request->taxtype ?? null,
-                'discount_percent' => $request->discount_percent ?? null,
-                'discount_amount' => $request->discount_amount ?? null,
-                's_h_amount' => $request->s_h_amount ?? null,
-                'terms_conditions' => $request->terms_conditions ?? null,
-                'currency_id' => $request->currency_id ?? 1,
-                'conversion_rate' => $request->conversion_rate ?? 1,
-                
-            ], $request->items ?? []);
+                'carrier' => null,
+                'shipping' => null,
+                'inventorymanager' => null,
+                'type' => null,
+                'adjustment' => null,
+                'taxtype' => 'individual',
+                'discount_percent' => null,
+                'discount_amount' => null,
+                's_h_amount' => null,
+                'terms_conditions' => null,
+                'currency_id' => 1,
+                'conversion_rate' => 1.000,
+                's_h_percent' => null,
+                'tags' => null,
+                'region_id' => null,
+            ],
+            items: $request->items ?? []
+        );
 
             // Registrar actividad
             $this->logActivity($quoteId, $userId);

@@ -463,4 +463,14 @@ interface QuoteRepositoryInterface
      * @return int Next quote ID
      */
     public function generateQuoteId(): int;
+
+    /**
+     * Duplicate an existing quote with new ID and quote number
+     * 
+     * @param array $baseData   
+     * @param array $itemsData   
+     * @param int $createdByUserId User ID 
+     * @return int|null new quote ID
+     */
+    public function duplicate(array $baseData, array $itemsData, int $createdByUserId): ?int;
 }

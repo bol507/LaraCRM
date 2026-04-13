@@ -65,18 +65,20 @@ Route::middleware('jwt')->group(function () {
     Route::delete('/opportunities/{id}', [OpportunityController::class, 'destroy']);
 
     // Quotes
-    Route::get('/quotes', [QuoteController::class, 'index']);
-    Route::post('/quotes', [QuoteController::class, 'store']);
-    Route::get('/quotes/{id}', [QuoteController::class, 'show']);
-    
-    Route::put('/quotes/{id}', [QuoteController::class, 'update']);
-    Route::delete('/quotes/{id}', [QuoteController::class, 'destroy']);
-    Route::post('/quotes/{id}/duplicate', [QuoteController::class, 'duplicate']);
-    Route::get('/quotes/{quoteId}/pdf/download', [QuotePDFController::class, 'generatePDF'])
-        ->name('quotes.pdf.download');
+    Route::prefix('quotes')->group(function () {
+        Route::get('/', [QuoteController::class, 'index']);
+        Route::post('/', [QuoteController::class, 'store']);
+        Route::get('/{id}', [QuoteController::class, 'show']);
+        Route::put('/{id}', [QuoteController::class, 'update']);
+        Route::delete('/{id}', [QuoteController::class, 'destroy']);
+        Route::post('/{id}/duplicate', [QuoteController::class, 'duplicate']);
+        Route::get('/{quoteId}/pdf/download', [QuotePDFController::class, 'generatePDF'])
+            ->name('quotes.pdf.download');
+        Route::get('/{quoteId}/pdf/preview', [QuotePDFController::class, 'previewPDF'])
+            ->name('quotes.pdf.preview');
+    });
 
-    Route::get('/quotes/{quoteId}/pdf/preview', [QuotePDFController::class, 'previewPDF'])
-        ->name('quotes.pdf.preview');
+    
 
     // Projects
     Route::prefix('projects')->group(function () {
@@ -89,11 +91,12 @@ Route::middleware('jwt')->group(function () {
 
     // Comment Routes
     Route::prefix('comments')->group(function () {
+        Route::get('/{commentId}', [CommentController::class, 'show']);
+        Route::delete('/{commentId}', [CommentController::class, 'destroy']);
         Route::get('/{module}/{relatedId}', [CommentController::class, 'index']);
         Route::post('/{module}/{relatedId}', [CommentController::class, 'store']);
-        Route::get('/{commentId}', [CommentController::class, 'show']);
         Route::patch('/{module}/{relatedId}/{commentId}', [CommentController::class, 'update']);
-        Route::delete('/{commentId}', [CommentController::class, 'destroy']);
+        
     });
 
     // Attachment Routes 

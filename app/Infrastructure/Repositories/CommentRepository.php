@@ -4,6 +4,7 @@ namespace App\Infrastructure\Repositories;
 
 use App\Application\Repositories\CommentRepositoryInterface;
 use App\Domain\Entities\Comment;
+use App\Infrastructure\Mappers\CommentMapper;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -181,42 +182,44 @@ class CommentRepository implements CommentRepositoryInterface
     public function findById(int $commentId): ?Comment
     {
         if ($commentId <= 0) {
-            return null;
+            throw new \InvalidArgumentException('commentId must be positive');
         }
 
         $row = DB::connection('vtiger')
             ->table('vtiger_modcomments')
             ->join('vtiger_crmentity', 'vtiger_modcomments.modcommentsid', '=', 'vtiger_crmentity.crmid')
             ->leftJoin('vtiger_users', 'vtiger_modcomments.userid', '=', 'vtiger_users.id')
-            ->select(
-                'vtiger_modcomments.*',
-                'vtiger_crmentity.createdtime',
-                'vtiger_crmentity.modifiedtime',
-                'vtiger_crmentity.deleted as crm_deleted',
-                'vtiger_users.user_name as user_name',
-                'vtiger_users.email1 as user_email',
-            )
+            ->leftJoin('vtiger_crmentity as related_entity', 'vtiger_modcomments.related_to', '=', 'related_entity.crmid')
             ->where('vtiger_modcomments.modcommentsid', $commentId)
             ->where('vtiger_crmentity.deleted', 0)
+            ->select(
+                'vtiger_modcomments.modcommentsid',
+                'vtiger_modcomments.related_to',
+                'vtiger_modcomments.commentcontent',
+                'vtiger_modcomments.userid',
+                'vtiger_modcomments.parent_comments',
+                'vtiger_modcomments.customer',
+                'vtiger_modcomments.reasontoedit',
+                'vtiger_modcomments.is_private',
+                'vtiger_modcomments.filename',
+                'vtiger_modcomments.related_email_id',
+                'vtiger_crmentity.createdtime',
+                'vtiger_crmentity.modifiedtime',
+                'vtiger_crmentity.label',
+                'related_entity.setype as related_module',
+                DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
+                DB::raw('vtiger_users.email1 as assigned_user_email')
+            )
             ->first();
-
-        if (! $row) {
+        if (!$row) {
             return null;
         }
 
-        return new Comment(
-            commentid: (int) $row->modcommentsid,
-            commentcontent: (string) $row->commentcontent,
-            related_to: (int) $row->related_to,
-            parent_comments: $row->parent_comments ? (int) $row->parent_comments : null,
-            userid: (int) $row->userid,
-            createdtime: $row->createdtime,
-            modifiedtime: $row->modifiedtime,
-            is_private: $row->is_private === '1' ? 1 : 0,
-            assigned_user_name: $row->user_name ?? null,
-            assigned_user_email: $row->user_email ?? null,
-            userName: $row->user_name ?? null,
-        );
+        $rowData = (array) $row;
+        $rowData['relatedModule'] = $row->related_module ?? null;
+
+        // Map to entity if found, otherwise return null
+        return CommentMapper::fromDatabase($rowData);
     }
 
     /**

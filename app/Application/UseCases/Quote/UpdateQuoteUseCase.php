@@ -61,29 +61,12 @@ class UpdateQuoteUseCase
         // Filtrar valores null
         $data = array_filter($data, fn ($v) => $v !== null);
 
-        // Actualizar en transacción
-        DB::connection('vtiger')->transaction(function () use ($quoteId, $data, $userId, $request) {
-            // 1. Actualizar vtiger_quotes
-            if (! empty($data)) {
-                $this->quote->updateQuote($quoteId, $data);
-            }
-
-            // 2. Actualizar vtiger_crmentity (label y description)
-            $crmentityData = ['label' => trim($request->subject)];
-            if ($request->description !== null) {
-                $crmentityData['description'] = $request->description;
-            }
-            $this->updateEntity->execute(
-                crmId: $quoteId,
-                data: $crmentityData,
-                userId: $userId
-            );
-        });
+        $success = $this->quote->update($request, $userId);
 
         // Registrar actividad
         $this->logActivity($quoteId, $userId);
 
-        return true;
+        return $success;
     }
 
     private function logActivity(int $quoteId, int $userId): void

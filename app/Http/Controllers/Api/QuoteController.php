@@ -185,6 +185,7 @@ class QuoteController extends Controller
             'closingdate' => 'nullable|date',
             'items' => 'required|array|min:1',
             'items.*.productname' => 'required|string',
+            'items.*.description' => 'nullable|string',
             'items.*.quantity' => 'required|numeric|min:0.001',
             'items.*.listprice' => 'required|numeric|min:0',
             'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
@@ -338,6 +339,7 @@ class QuoteController extends Controller
             'closingdate' => 'nullable|date',
             'items' => 'required|array|min:1',
             'items.*.productname' => 'required|string',
+            'items.*.description' => 'nullable|string',
             'items.*.quantity' => 'required|numeric|min:0.001',
             'items.*.listprice' => 'required|numeric|min:0',
             'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
@@ -498,7 +500,7 @@ class QuoteController extends Controller
             if (! $authenticatedUser) {
                 return response()->json(['error' => 'User not authenticated'], 401);
             }
-            
+
             $subjectSuffix = $request->get('suffix', '(Copy)');
 
             $newQuoteId = $this->duplicateQuoteUseCase->execute($id, $authenticatedUser->getId(), $subjectSuffix);
@@ -510,17 +512,25 @@ class QuoteController extends Controller
                     'quoteId' => $newQuoteId,
                     'redirectUrl' => "/dashboard/quotes/{$newQuoteId}",
                 ],
-            ],201);
-
+            ], 201);
         } catch (\InvalidArgumentException $e) {
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
             ], 400);
         } catch (\Exception $e) {
+            Log::error('Error duplicando cotización', [
+                'quote_id' => $id,
+                'user_id' => $authenticatedUser?->getId(),
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to duplicate quote',
+                'error' => 'Failed to duplicate quote: ' . $e->getMessage(), 
             ], 500);
         }
     }

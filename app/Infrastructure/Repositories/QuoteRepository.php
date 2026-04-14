@@ -173,7 +173,7 @@ class QuoteRepository implements QuoteRepositoryInterface
                 DB::connection(self::CONNECTION)->table('vtiger_inventoryproductrel')
                     ->where('id', $quoteId)
                     ->delete();
-                $subtotal = 0;  // ✅ Inicializar acumulador
+                $subtotal = 0;
                 $taxRate = self::TAX;
 
                 foreach ($request->items as $index => $item) {
@@ -192,8 +192,8 @@ class QuoteRepository implements QuoteRepositoryInterface
                         'quantity' => $item['quantity'],
                         'listprice' => $item['listprice'],
                         'discount_percent' => $item['discount_percent'] ?? 0,
-                        'description' => $item['productname'] ?? '',
-                        'comment' => $item['description'] ?? null,
+                        'description' => $item['description'] ?? '',
+                        'comment' => $item['comment'] ?? null,
                         'incrementondel' => 0,
                     ]);
                 }
@@ -247,8 +247,9 @@ class QuoteRepository implements QuoteRepositoryInterface
         // Get line items
         $items = DB::connection(self::CONNECTION)
             ->table('vtiger_inventoryproductrel')
-            ->where('id', $quoteid)
-            ->orderBy('sequence_no')
+            ->leftJoin('vtiger_products', 'vtiger_inventoryproductrel.productid', '=', 'vtiger_products.productid')
+            ->where('vtiger_inventoryproductrel.id', $quoteid)
+            ->orderBy('vtiger_inventoryproductrel.sequence_no')
             ->get()
             ->map(function ($item) {
                 $quantity = is_numeric($item->quantity) ? (float) $item->quantity : 0;
@@ -259,17 +260,27 @@ class QuoteRepository implements QuoteRepositoryInterface
                 $netprice = $listprice * (1 - ($discountPercent / 100));
                 $total = $quantity * $netprice;
 
-                
+                $description = '';
+                if (!empty($item->productid) && !empty($item->productname)) {
+                    $description = $item->productname;
+                    if (!empty($item->description) && $item->description !== $item->productname) {
+                        $description .= ' - ' . $item->description;
+                    }
+                } elseif (!empty($item->description)) {
+                    $description = $item->description;
+                }
+
                 return [
-                    'productid' => $item->productid,
+                    'productid' => $item->productid ? (int) $item->productid : null,
                     'sequence_no' => (int) ($item->sequence_no ?? 0),
-                    'productname' => $item->description ?? '',
                     'quantity' => $quantity,
                     'listprice' => $listprice,
                     'discount_percent' => $discountPercent,
                     'netprice' => $netprice,
                     'total' => $total,
-                    'description' => $item->comment ?? null,
+                    'description' => $description, 
+                    'comment' => $item->comment ?? null,
+
                 ];
             })
             ->toArray();
@@ -490,8 +501,8 @@ class QuoteRepository implements QuoteRepositoryInterface
                     'quantity' => $quantity,
                     'listprice' => $listprice,
                     'discount_percent' => $discountPercent,
-                    'description' => $item['productname'] ?? '',
-                    'comment' => $item['description'] ?? null,
+                    'description' => $item['description'] ?? '',
+                    'comment' => $item['comment'] ?? null,
                     'incrementondel' => 0,
                 ]);
             }
@@ -540,8 +551,8 @@ class QuoteRepository implements QuoteRepositoryInterface
 
 
             if ($yearPart !== $currentYearShort) {
-            return 'C-' . $currentYearShort . '-00001';
-        }
+                return 'C-' . $currentYearShort . '-00001';
+            }
 
 
             $nextNumber = (int) $numberPart + 1;
@@ -625,7 +636,7 @@ class QuoteRepository implements QuoteRepositoryInterface
                     'listprice' => $listprice,
                     'discount_percent' => $discountPercent,
                     'description' => $item['description'] ?? null,
-                    'comment' => $item['description'] ?? null,
+                    'comment' => $item['comment'] ?? null,
                     'incrementondel' => 0,
                 ]);
             }

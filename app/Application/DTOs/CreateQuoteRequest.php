@@ -11,7 +11,7 @@ class CreateQuoteRequest
         public readonly int $assigned_user_id,
         public readonly ?string $validtill,
         public readonly ?string $description,
-        /** @var array<array{productid?: int, sequence_no: int, productname: string, quantity: float, listprice: float, discount_percent: float, description?: string}> */
+        /** @var array<array{productid?: int, sequence_no: int,  quantity: float, listprice: float, discount_percent: float, description?: string, comment?: string}> */
         public readonly array $items
     ) {}
 }

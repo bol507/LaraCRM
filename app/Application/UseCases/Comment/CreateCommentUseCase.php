@@ -56,7 +56,7 @@ class CreateCommentUseCase
         );
 
         // Insertar en transacción
-        $comment = DB::connection('vtiger')->transaction(function () use ($request, $userId, $commentId) {
+        $comment = DB::connection('vtiger')->transaction(function () use ($request, $userId, $commentId, $now) {
             // 1. Insertar vtiger_crmentity using generic use case
             $this->createEntity->execute(
                 data: [
@@ -64,6 +64,8 @@ class CreateCommentUseCase
                     'description' => substr($request->content, 0, 100),
                     'smownerid' => $userId,
                     'smcreatorid' => $userId,
+                    'createdtime' => $now,
+                    'modifiedtime' => $now,
                 ],
                 setype: self::ENTITY_SETYPE,
                 table: 'vtiger_crmentity',

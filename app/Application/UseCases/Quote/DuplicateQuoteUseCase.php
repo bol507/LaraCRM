@@ -55,20 +55,14 @@ class DuplicateQuoteUseCase
         $itemsData = [];
         if (!empty($originalQuote->items) && is_array($originalQuote->items)) {
             foreach ($originalQuote->items as $index => $item) {
-                if (empty($item['productname']) && empty($item['productid'])) {
-                    Log::warning("Skipping invalid item {$index} in quote {$quoteId}", ['item' => $item]);
-                    continue;
-                }
-
                 $itemsData[] = [
                     'productid' => $item['productid'] ?? null,
                     'sequence_no' => $item['sequence_no'] ?? ($index + 1),
                     'quantity' => $item['quantity'] ?? 1,
                     'listprice' => $item['listprice'] ?? 0,
                     'discount_percent' => $item['discount_percent'] ?? 0,
-                    'productname' => $item['productname'] ?? '',
                     'description' => $item['description'] ?? null,
-                    'comment' => $item['description'] ?? null,
+                    'comment' => $item['comment'] ?? null,
                 ];
             }
         }

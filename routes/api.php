@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\QuotePDFController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\PurchaseController;
 use App\Http\Controllers\Api\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -78,7 +79,7 @@ Route::middleware('jwt')->group(function () {
             ->name('quotes.pdf.preview');
     });
 
-    
+
 
     // Projects
     Route::prefix('projects')->group(function () {
@@ -96,7 +97,6 @@ Route::middleware('jwt')->group(function () {
         Route::get('/{module}/{relatedId}', [CommentController::class, 'index']);
         Route::post('/{module}/{relatedId}', [CommentController::class, 'store']);
         Route::patch('/{module}/{relatedId}/{commentId}', [CommentController::class, 'update']);
-        
     });
 
     // Attachment Routes 
@@ -158,6 +158,18 @@ Route::middleware('jwt')->group(function () {
     });
 
     Route::prefix('activity')->group(function () {
-         Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+        Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+    });
+
+    // Purchases
+    Route::prefix('purchases')->group(function () {
+        Route::get('/', [PurchaseController::class, 'index']);
+        Route::post('/', [PurchaseController::class, 'store']);
+        Route::get('/{id}', [PurchaseController::class, 'show']);
+        Route::put('/{id}', [PurchaseController::class, 'update']);
+        Route::delete('/{id}', [PurchaseController::class, 'destroy']);
+
+        // By project
+        Route::get('/project/{projectId}', [PurchaseController::class, 'byProject']);
     });
 });

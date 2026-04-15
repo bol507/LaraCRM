@@ -13,6 +13,7 @@ use App\Application\Repositories\DashboardRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
 use App\Application\Repositories\ProjectRepositoryInterface;
+use App\Application\Repositories\PurchaseRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
@@ -30,6 +31,7 @@ use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
 use App\Infrastructure\Repositories\Core\SeActivityRelRepository;
 use App\Infrastructure\Repositories\PotentialRepository;
 use App\Infrastructure\Repositories\ProjectRepository;
+use App\Infrastructure\Repositories\PurchaseRepository;
 use App\Infrastructure\Repositories\QuoteRepository;
 use App\Infrastructure\Repositories\ShippingAddressRepository;
 use App\Infrastructure\Repositories\VtigerActivityLogRepository;
@@ -149,6 +151,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             ActivityLogRepositoryInterface::class,
             VtigerActivityLogRepository::class
+        );
+        // Purchases
+        $this->app->bind(
+            PurchaseRepositoryInterface::class,
+            PurchaseRepository::class
         );
 
     }

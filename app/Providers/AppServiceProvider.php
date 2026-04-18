@@ -15,8 +15,11 @@ use App\Application\Repositories\OpportunityRepositoryInterface;
 use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Application\Repositories\PurchaseRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
+use App\Application\Repositories\RoleRepositoryInterface;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
+use App\Application\Repositories\UserRoleAssignmentRepositoryInterface;
+use App\Application\Repositories\VendorRepositoryInterface;
 use App\Application\UseCases\Core\Activity\CreateTaskActivityUseCase;
 use App\Application\UseCases\Core\Activity\UpdateTaskActivityUseCase;
 use App\Application\UseCases\Core\Entity\CreateEntityUseCase;
@@ -33,7 +36,10 @@ use App\Infrastructure\Repositories\PotentialRepository;
 use App\Infrastructure\Repositories\ProjectRepository;
 use App\Infrastructure\Repositories\PurchaseRepository;
 use App\Infrastructure\Repositories\QuoteRepository;
+use App\Infrastructure\Repositories\RoleRepository;
 use App\Infrastructure\Repositories\ShippingAddressRepository;
+use App\Infrastructure\Repositories\UserRoleAssignmentRepository;
+use App\Infrastructure\Repositories\VendorRepository;
 use App\Infrastructure\Repositories\VtigerActivityLogRepository;
 use App\Infrastructure\Repositories\VtigerAttachmentRepository;
 use App\Infrastructure\Repositories\VtigerDashboardRepository;
@@ -58,7 +64,10 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(CrmentityRepository::class);
         $this->app->singleton(ActivityRepository::class);
         $this->app->singleton(SeActivityRelRepository::class);
-        $this->app->singleton(IdGeneratorRepository::class);
+        $this->app->singleton(
+            IdGeneratorRepository::class, 
+            fn() => new IdGeneratorRepository(connection: 'vtiger')
+        );
 
         // Generic UseCases (singleton - reused by all module-specific UseCases)
         $this->app->singleton(CreateEntityUseCase::class);
@@ -156,6 +165,21 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             PurchaseRepositoryInterface::class,
             PurchaseRepository::class
+        );
+        // vendors
+        $this->app->bind(
+            VendorRepositoryInterface::class,
+            VendorRepository::class
+        );
+        // Roles
+        $this->app->bind(
+            RoleRepositoryInterface::class,
+            RoleRepository::class
+        );
+        // UserRoleAssignmentRepository
+        $this->app->bind(
+            UserRoleAssignmentRepositoryInterface::class,
+            UserRoleAssignmentRepository::class
         );
 
     }

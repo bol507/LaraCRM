@@ -484,4 +484,6 @@ interface ProjectRepositoryInterface
      *                                                          in client summaries
      */
     public function countByClient(int $clientId): int;
+
+    
 }

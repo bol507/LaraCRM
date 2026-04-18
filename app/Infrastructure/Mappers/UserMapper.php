@@ -17,44 +17,45 @@ use App\Domain\Entities\User;
  */
 class UserMapper
 {
-    /**
-     * Valid roles for the domain User entity
-     * 
-     * @var array<string>
-     */
-    private const VALID_ROLES = ['Admin', 'Usuario', 'Cliente'];
 
-    /**
-     * Map Eloquent VtigerUser model to domain User entity
-     * 
-     * @param VtigerUser $model Eloquent model instance
-     * @return User Domain entity
-     */
+
     public static function toDomain(VtigerUser $model): User
     {
+        $is_admin_raw = $model->is_admin ?? '0';
+        $is_admin = in_array($is_admin_raw, ['1', 'on', 'yes', true, 1], true);
+
+        $roleData = \Illuminate\Support\Facades\DB::connection('vtiger')
+            ->table('vtiger_user2role')
+            ->join('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
+            ->where('vtiger_user2role.userid', $model->id)
+            ->select('vtiger_role.roleid', 'vtiger_role.rolename')
+            ->first();
+
+        $role_id = $roleData?->roleid ?? null;
+        $rolename = $roleData?->rolename ?? null;
+
+        $role = $is_admin ? 'Admin' : ($rolename ?? 'Usuario');
         return new User(
             id: $model->id,
             userName: $model->user_name,
             firstName: $model->first_name,
             lastName: $model->last_name,
             email: $model->email1,
-            role: self::determineRoleFromModel($model),
+
+            role: $role, //legacy
+
             status: self::determineStatusFromModel($model),
             phoneCrm: $model->phone_crm_extension,
             department: $model->department,
             reportsToId: $model->reports_to_id,
-            isActive: $model->status === 'Active'
+            isActive: $model->status === 'Active',
+
+            is_admin: $is_admin,
+            role_id: $role_id,
+            rolename: $rolename,
         );
     }
 
-    /**
-     * Map raw database row to domain User entity
-     * 
-     * Useful for repositories that use query builder instead of Eloquent.
-     * 
-     * @param object $row Raw database row from query builder
-     * @return User Domain entity
-     */
     public static function fromDatabaseRow(object $row): User
     {
         return User::fromArray([
@@ -63,7 +64,11 @@ class UserMapper
             'first_name' => $row->first_name,
             'last_name' => $row->last_name,
             'email' => $row->email1,
-            'role' => self::determineRoleFromRow($row),
+
+            'is_admin' => in_array($row->is_admin ?? '0', ['1', 'on', 'yes', true, 1], true),
+            'role_id' => $row->role_id ?? null,
+            'rolename' => $row->rolename ?? null,
+
             'status' => self::determineStatusFromRow($row),
             'phone_crm' => $row->phone_crm ?? $row->phone_crm_extension ?? null,
             'department' => $row->department ?? null,
@@ -72,12 +77,6 @@ class UserMapper
         ]);
     }
 
-    /**
-     * Map domain User entity to persistence array
-     * 
-     * @param User $entity Domain entity
-     * @return array Associative array for database insertion/update
-     */
     public static function toPersistence(User $entity): array
     {
         return [
@@ -89,108 +88,24 @@ class UserMapper
             'status' => $entity->getStatus(),
             'phone_crm_extension' => $entity->getPhoneCrm(),
             'department' => $entity->getDepartment(),
-            'reports_to_id' => $entity->getReportsToId(),
+            'reports_to_id' => $entity->getReportsToId() ? (string) $entity->getReportsToId() : null,
         ];
     }
 
-    /**
-     * Determine domain role value from Eloquent model
-     * 
-     * @param VtigerUser $model Eloquent model
-     * @return string One of: 'Admin', 'Usuario', 'Cliente'
-     */
-    private static function determineRoleFromModel(VtigerUser $model): string
-    {
-        // Check is_admin flag (Vtiger standard)
-        if ($model->is_admin === '1' || $model->is_admin === 'on' || $model->is_admin === 1) {
-            return 'Admin';
-        }
+    
 
-        // Check role_id (typically 1 = admin)
-        if ($model->role_id === 1) {
-            return 'Admin';
-        }
+    
 
-        // Check role name via relationship or direct field
-        if (!empty($model->rolename) && stripos($model->rolename, 'admin') !== false) {
-            return 'Admin';
-        }
-        if (!empty($model->role_name) && stripos($model->role_name, 'admin') !== false) {
-            return 'Admin';
-        }
-
-        // Check for client role
-        if (!empty($model->rolename) && stripos($model->rolename, 'cliente') !== false) {
-            return 'Cliente';
-        }
-        if (!empty($model->role_name) && stripos($model->role_name, 'cliente') !== false) {
-            return 'Cliente';
-        }
-
-        // Default to regular user
-        return 'Usuario';
-    }
-
-    /**
-     * Determine domain role value from raw database row
-     * 
-     * @param object $row Raw database row
-     * @return string One of: 'Admin', 'Usuario', 'Cliente'
-     */
-    private static function determineRoleFromRow(object $row): string
-    {
-        // Check is_admin flag (Vtiger standard)
-        if (isset($row->is_admin) && ($row->is_admin === '1' || $row->is_admin === 'on' || $row->is_admin === 1)) {
-            return 'Admin';
-        }
-
-        // Check role_id (typically 1 = admin)
-        if (isset($row->role_id) && (int) $row->role_id === 1) {
-            return 'Admin';
-        }
-
-        // Check role name via joined table
-        if (isset($row->rolename) && stripos($row->rolename, 'admin') !== false) {
-            return 'Admin';
-        }
-
-        // Check for client role
-        if (isset($row->rolename) && stripos($row->rolename, 'cliente') !== false) {
-            return 'Cliente';
-        }
-
-        // Default to regular user
-        return 'Usuario';
-    }
-
-    /**
-     * Determine domain status value from Eloquent model
-     * 
-     * @param VtigerUser $model Eloquent model
-     * @return string One of: 'Active', 'Inactive', 'Pending'
-     */
     private static function determineStatusFromModel(VtigerUser $model): string
     {
         return self::normalizeStatus($model->status ?? 'Active');
     }
 
-    /**
-     * Determine domain status value from raw database row
-     * 
-     * @param object $row Raw database row
-     * @return string One of: 'Active', 'Inactive', 'Pending'
-     */
     private static function determineStatusFromRow(object $row): string
     {
         return self::normalizeStatus($row->status ?? 'Active');
     }
 
-    /**
-     * Normalize Vtiger status value to domain status
-     * 
-     * @param string $vtigerStatus Raw status from Vtiger
-     * @return string Normalized domain status
-     */
     private static function normalizeStatus(string $vtigerStatus): string
     {
         return match (strtolower(trim($vtigerStatus))) {

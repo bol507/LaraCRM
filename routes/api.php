@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\Route;
+
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\ClientController;
@@ -10,12 +12,14 @@ use App\Http\Controllers\Api\GlobalSearchController;
 use App\Http\Controllers\Api\OpportunityController;
 use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\QuotePDFController;
-use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\PurchaseController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TaskController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\VendorController;
+
 
 Route::prefix('auth')->group(function () {
     Route::post('/login', [LoginController::class, 'login']);
@@ -27,22 +31,35 @@ Route::prefix('auth')->group(function () {
 
 
 Route::middleware('jwt')->group(function () {
-    // Users
+
     Route::prefix('users')->group(function () {
-        Route::get('/', [UserController::class, 'index']);
-        Route::post('/', [UserController::class, 'store']);
+
+        // search
         Route::get('/search', [UserController::class, 'searchUsers']);
         Route::get('/find-by-full-name', [UserController::class, 'findUserByFullName']);
-        Route::get('/{id}', [UserController::class, 'show']);
-        Route::delete('/{id}', [UserController::class, 'destroy']);
-        Route::put('/{id}/password', [UserController::class, 'changePassword']);
+
+
+
+        //  Admin only 
+        Route::middleware('requireAdmin')->group(function () {
+            Route::get('/', [UserController::class, 'index']);
+            Route::post('/', [UserController::class, 'store']);
+            Route::put('/{id}', [UserController::class, 'update']);
+            Route::get('/{id}', [UserController::class, 'show']);
+            Route::delete('/{id}', [UserController::class, 'destroy']);
+            Route::put('/{id}/password', [UserController::class, 'changePassword']);
+        });
     });
+
+    Route::prefix('roles')->group(function () {
+        Route::get('/', [RoleController::class, 'index']);                   
+        Route::put('/users/{userId}/role', [RoleController::class, 'assign']);     
+    });
+
 
     // User profile
     Route::get('/profile', [UserController::class, 'getMyProfile']);
     Route::put('/profile', [UserController::class, 'updateMyProfile']);
-
-
 
     // Clients
     Route::prefix('clients')->group(function () {
@@ -84,13 +101,14 @@ Route::middleware('jwt')->group(function () {
     // Projects
     Route::prefix('projects')->group(function () {
         Route::get('/', [ProjectController::class, 'index']);
+        Route::get('/search', [ProjectController::class, 'search']);
         Route::get('/{id}', [ProjectController::class, 'show']);
         Route::post('/', [ProjectController::class, 'store']);
         Route::put('/{id}', [ProjectController::class, 'update']);
         Route::delete('/{id}', [ProjectController::class, 'destroy']);
     });
 
-    // Comment Routes
+    // Comment 
     Route::prefix('comments')->group(function () {
         Route::get('/{commentId}', [CommentController::class, 'show']);
         Route::delete('/{commentId}', [CommentController::class, 'destroy']);
@@ -99,7 +117,7 @@ Route::middleware('jwt')->group(function () {
         Route::patch('/{module}/{relatedId}/{commentId}', [CommentController::class, 'update']);
     });
 
-    // Attachment Routes 
+    // Attachment 
     Route::prefix('attachments')->group(function () {
         Route::post('/{module}/{recordId}', [AttachmentController::class, 'upload']);
         Route::get('/{module}/{recordId}', [AttachmentController::class, 'index']);
@@ -171,5 +189,14 @@ Route::middleware('jwt')->group(function () {
 
         // By project
         Route::get('/project/{projectId}', [PurchaseController::class, 'byProject']);
+    });
+
+    Route::prefix('vendors')->group(function () {
+        Route::get('/', [VendorController::class, 'index']);
+        Route::get('/search', [VendorController::class, 'search']); // for autocomplete
+        Route::get('/{id}', [VendorController::class, 'show']);
+        Route::post('/', [VendorController::class, 'store']);
+        Route::put('/{id}', [VendorController::class, 'update']);
+        Route::delete('/{id}', [VendorController::class, 'destroy']);
     });
 });

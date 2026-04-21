@@ -37,4 +37,15 @@ class UserRoleAssignmentRepository implements UserRoleAssignmentRepositoryInterf
 
         return $row ? (array) $row : null;
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function delete(int $userId): void
+    {
+        DB::connection('vtiger')
+            ->table('vtiger_user2role')
+            ->where('userid', $userId)
+            ->delete();
+    }
 }

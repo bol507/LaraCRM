@@ -23,6 +23,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * REST API controller for User management operations.
@@ -173,7 +175,7 @@ class UserController extends Controller
                     'max:100',
                     Rule::unique('vtiger.vtiger_users', 'email1')->where('deleted', 0)
                 ],
-            'is_admin' => 'required|boolean',            
+            'is_admin' => 'required|boolean',
             'role_id'  => 'required|string|exists:vtiger.vtiger_role,roleid', // Jerarquía
 
             'password' => 'required|string|min:6',
@@ -388,8 +390,24 @@ class UserController extends Controller
      */
     public function changePassword(Request $request, int $id): JsonResponse
     {
+        if (!is_numeric($id) || (int) $id <= 0) {
+            return response()->json(['error' => 'Invalid user ID'], 400);
+        }
+        $userId = (int) $id;
+
         $validator = Validator::make($request->all(), [
-            'new_password' => 'required|string|min:6',
+            'new_password' => [
+                'required',
+                'string',
+                'min:6',
+                'regex:/[A-Z]/',
+                'regex:/[0-9]/',
+            ],
+            'current_password' => 'nullable|string', // Opcional: verificar contraseña actual
+            'confirm_password' => 'required|string|same:new_password', // Confirmación
+        ], [
+            'new_password.regex' => 'Password must contain at least one uppercase letter and one number',
+            'confirm_password.same' => 'Passwords do not match',
         ]);
 
         if ($validator->fails()) {
@@ -405,27 +423,22 @@ class UserController extends Controller
         }
 
 
-        if ($authenticatedUser->getId() !== $id && !$authenticatedUser->isAdmin()) {
-            return response()->json(['error' => 'Permission denied to change this password'], 403);
-        }
 
-        $changeRequest = new ChangePasswordRequest(
-            userId: $id,
-            newPassword: $request->new_password
-        );
+
+        $dto = ChangePasswordRequest::fromArray([
+            'user_id' => $userId,
+            'new_password' => $request->new_password,
+            'current_password' => $request->current_password,
+        ]);
 
         try {
-            $success = $this->changePasswordUseCase->execute($changeRequest, $authenticatedUser->getId());
+            $this->changePasswordUseCase->execute($dto, $authenticatedUser->getId());
 
-            if ($success) {
-                return response()->json(['message' => 'Password updated successfully']);
-            }
-
-            return response()->json(['error' => 'User not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Error changing password: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['message' => 'Password updated successfully']);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        } catch (RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 404);
         }
     }
 
@@ -442,23 +455,26 @@ class UserController extends Controller
      */
     public function destroy(Request $request, int $id): JsonResponse
     {
+        if (!is_numeric($id) || (int) $id <= 0) {
+            return response()->json(['error' => 'Invalid user ID'], 400);
+        }
+
         $authenticatedUser = $request->attributes->get('auth_user');
         if (!$authenticatedUser) {
             return response()->json(['error' => 'User not authenticated'], 401);
         }
-
+        $userId = (int) $id;
         try {
-            $success = $this->deleteUserUseCase->execute($id, $authenticatedUser->getId());
+            $success = $this->deleteUserUseCase->execute($userId, $authenticatedUser->getId());
+            if (!$success) {
+                return response()->json(['error' => 'User not found or already deleted'], 404);
+            }   
 
-            if ($success) {
-                return response()->json(['message' => 'User deleted successfully']);
-            }
-
-            return response()->json(['error' => 'User not found or already deleted'], 404);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage()
-            ], 403);
+            return response()->json(['message' => 'User deleted successfully']);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 403); // Forbidden
+        } catch (RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 404); // Not found
         }
     }
 

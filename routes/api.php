@@ -47,7 +47,7 @@ Route::middleware('jwt')->group(function () {
             Route::put('/{id}', [UserController::class, 'update']);
             Route::get('/{id}', [UserController::class, 'show']);
             Route::delete('/{id}', [UserController::class, 'destroy']);
-            Route::put('/{id}/password', [UserController::class, 'changePassword']);
+            Route::put('/{id}/change-password', [UserController::class, 'changePassword']);
         });
     });
 

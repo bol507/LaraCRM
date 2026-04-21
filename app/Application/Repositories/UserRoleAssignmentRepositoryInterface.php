@@ -19,4 +19,12 @@ interface UserRoleAssignmentRepositoryInterface
      * @return array<string, mixed>|null
      */
     public function findRoleDetailsByUserId(int $userId): ?array;
+
+    /**
+     * Delete a user's assignment to a role.
+     *
+     * @param integer $userId
+     * @return void
+     */
+    public function delete(int $userId): void;
 }

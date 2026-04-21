@@ -47,7 +47,7 @@ class UserMapper
             status: self::determineStatusFromModel($model),
             phoneCrm: $model->phone_crm_extension,
             department: $model->department,
-            reportsToId: $model->reports_to_id,
+            reportsToId: is_numeric($model->reports_to_id) ? (int) $model->reports_to_id : null,
             isActive: $model->status === 'Active',
 
             is_admin: $is_admin,
@@ -72,7 +72,7 @@ class UserMapper
             'status' => self::determineStatusFromRow($row),
             'phone_crm' => $row->phone_crm ?? $row->phone_crm_extension ?? null,
             'department' => $row->department ?? null,
-            'reports_to_id' => isset($row->reports_to_id) ? (int) $row->reports_to_id : null,
+            'reports_to_id' => is_numeric($row->reports_to_id) ? (int) $row->reports_to_id : null,
             'is_active' => ($row->status ?? 'Active') === 'Active',
         ]);
     }

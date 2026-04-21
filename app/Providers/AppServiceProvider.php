@@ -9,6 +9,7 @@ use App\Application\Repositories\AttachmentRepositoryInterface;
 use App\Application\Repositories\ClientRepositoryInterface;
 use App\Application\Repositories\CommentRepositoryInterface;
 use App\Application\Repositories\ContactRepositoryInterface;
+use App\Application\Repositories\CrmentityRepositoryInterface;
 use App\Application\Repositories\DashboardRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
@@ -61,7 +62,10 @@ class AppServiceProvider extends ServiceProvider
         
 
         // Core repositories (singleton - shared across all use cases)
-        $this->app->singleton(CrmentityRepository::class);
+        $this->app->singleton(
+            CrmentityRepositoryInterface::class,
+            CrmentityRepository::class
+        );
         $this->app->singleton(ActivityRepository::class);
         $this->app->singleton(SeActivityRelRepository::class);
         $this->app->singleton(
@@ -181,6 +185,7 @@ class AppServiceProvider extends ServiceProvider
             UserRoleAssignmentRepositoryInterface::class,
             UserRoleAssignmentRepository::class
         );
+        
 
     }
 

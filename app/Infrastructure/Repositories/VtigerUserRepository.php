@@ -92,14 +92,14 @@ class VtigerUserRepository implements UserRepositoryInterface
                     'vtiger_users.user_name',
                     'vtiger_users.first_name',
                     'vtiger_users.last_name',
-                    'vtiger_users.email1 as email1',         
-                    'vtiger_users.is_admin',                
+                    'vtiger_users.email1 as email1',
+                    'vtiger_users.is_admin',
                     'vtiger_users.status',
-                    'vtiger_users.phone_crm_extension as phone_crm_extension', 
+                    'vtiger_users.phone_crm_extension as phone_crm_extension',
                     'vtiger_users.department',
                     'vtiger_users.reports_to_id',
-                    'vtiger_role.roleid as role_id',         
-                    'vtiger_role.rolename'                   
+                    'vtiger_role.roleid as role_id',
+                    'vtiger_role.rolename'
                 )
                 ->where('vtiger_users.id', $id)
                 ->where('vtiger_users.deleted', 0)
@@ -344,42 +344,20 @@ class VtigerUserRepository implements UserRepositoryInterface
      */
     public function delete(int $id, int $deletedByUserId): bool
     {
-        // Verify user exists and is active
-        $user = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $id)
-            ->where('deleted', 0)
-            ->first();
+        $now = now()->format('Y-m-d H:i:s');
 
-        if (!$user) {
-            return false;
-        }
-
-        // ⚠️ Authorization check: only admins can delete users
-        $deleterIsAdmin = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $deletedByUserId)
-            ->where('is_admin', '1')
-            ->exists();
-
-        if (!$deleterIsAdmin) {
-            throw new \Exception('Only administrators can delete users');
-        }
-
-        // ⚠️ Prevention: users cannot delete their own account
-        if ($deletedByUserId === $id) {
-            throw new \Exception('You cannot delete your own account');
-        }
-
-        // Perform soft delete
-        return DB::connection('vtiger')
+        $updated = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $id)
             ->update([
                 'deleted' => 1,
-                'date_modified' => now()->format('Y-m-d H:i:s'),
-                'modified_user_id' => $deletedByUserId,
+                'date_modified' => $now,
+                'modified_user_id' => (string) $deletedByUserId,
             ]) > 0;
+        if (!$updated) {
+                throw new RuntimeException('Failed to delete user or user already deleted');
+        }
+        return true;
     }
 
     /**
@@ -444,41 +422,23 @@ class VtigerUserRepository implements UserRepositoryInterface
      */
     public function changePassword(int $userId, string $newPassword, int $modifiedByUserId): bool
     {
-        // Verify user exists
-        $user = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $userId)
-            ->where('deleted', 0)
-            ->first();
-
-        if (!$user) {
-            return false;
-        }
-
-        // ⚠️ Authorization check
-        $modifierIsAdmin = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $modifiedByUserId)
-            ->where('is_admin', '1')
-            ->exists();
-
-        if ($modifiedByUserId !== $userId && !$modifierIsAdmin) {
-            throw new \Exception('You do not have permission to change this password');
-        }
-
         $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+        $now = now()->format('Y-m-d H:i:s');
 
-        DB::connection('vtiger')
+        $updated = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $userId)
             ->update([
                 'user_password' => $hashedPassword,
                 'confirm_password' => $hashedPassword,
                 'crypt_type' => 'PHASH',
-                'date_modified' => now()->format('Y-m-d H:i:s'),
+                'date_modified' => $now,
                 'modified_user_id' => $modifiedByUserId,
             ]);
 
+        if (!$updated) {
+            throw new RuntimeException('Failed to update password');
+        }
         return true;
     }
 

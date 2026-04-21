@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Application\DTOs\User\ChangePasswordRequest;
 use App\Application\DTOs\User\CreateUserRequest;
 use App\Application\DTOs\User\UpdateUserProfileRequest;
+use App\Application\DTOs\User\UpdateUserRequest;
 use App\Application\DTOs\User\UserDto;
 use App\Application\UseCases\User\ChangePasswordUseCase;
 use App\Application\UseCases\User\CreateUserUseCase;
@@ -16,10 +17,14 @@ use App\Application\UseCases\User\FindUsersByNameOrUsernameUseCase;
 use App\Application\UseCases\User\GetAllUsersUseCase;
 use App\Application\UseCases\User\GetMyProfileUseCase;
 use App\Application\UseCases\User\UpdateUserProfileUseCase;
+use App\Application\UseCases\User\UpdateUserUseCase;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * REST API controller for User management operations.
@@ -50,6 +55,7 @@ class UserController extends Controller
     public function __construct(
         private readonly GetAllUsersUseCase $getAllUsersUseCase,
         private readonly CreateUserUseCase $createUserUseCase,
+        private readonly UpdateUserUseCase $updateUserUseCase,
         private readonly UpdateUserProfileUseCase $updateUserProfileUseCase,
         private readonly ChangePasswordUseCase $changePasswordUseCase,
         private readonly DeleteUserUseCase $deleteUserUseCase,
@@ -74,8 +80,6 @@ class UserController extends Controller
         $search = $request->get('search');
 
         $paginator = $this->getAllUsersUseCase->execute($page, $perPage, $search);
-
-        // ✅ Use UserDto::fromEntities() for consistent API response format
         $data = UserDto::fromEntities($paginator->items());
 
         return response()->json([
@@ -108,12 +112,10 @@ class UserController extends Controller
     public function show(int $id): JsonResponse
     {
         $authenticatedUser = request()->attributes->get('auth_user');
-        
+
         if (!$authenticatedUser) {
             return response()->json(['error' => 'User not authenticated'], 401);
         }
-
-        // ✅ Use getter for admin check (entity now has private properties)
         if ($authenticatedUser->getId() !== $id && !$authenticatedUser->isAdmin()) {
             return response()->json(['error' => 'Permission denied to view this user'], 403);
         }
@@ -125,7 +127,7 @@ class UserController extends Controller
                 return response()->json(['error' => 'User not found'], 404);
             }
 
-            // ✅ Use UserDto::fromEntity() for consistent response format
+
             return response()->json([
                 'data' => UserDto::fromEntity($user)
             ]);
@@ -147,13 +149,38 @@ class UserController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $email = $request->input('email');
+
+
+        $genericEmails = [
+            'info@canalwoods.com',
+            'noreply@canalwoods.com',
+            'admin@canalwoods.com',
+        ];
+        $isGeneric = $email && in_array(strtolower(trim($email)), $genericEmails);
         $validator = Validator::make($request->all(), [
-            'user_name' => 'required|string|max:50|unique:vtiger.vtiger_users,user_name',
-            'first_name' => 'required|string|max:50',
-            'last_name' => 'required|string|max:50',
-            'email' => 'required|email|max:100|unique:vtiger.vtiger_users,email1',
-            'role' => 'required|in:Admin,Usuario,Cliente',
+            'user_name' => [
+                'required',
+                'string',
+                'max:50',
+                Rule::unique('vtiger.vtiger_users', 'user_name')->where('deleted', 0)
+            ],
+            'first_name' => 'required|string|max:30',
+            'last_name' => 'required|string|max:30',
+            'email' => $isGeneric
+                ? ['required', 'email', 'max:100']
+                : [
+                    'required',
+                    'email',
+                    'max:100',
+                    Rule::unique('vtiger.vtiger_users', 'email1')->where('deleted', 0)
+                ],
+            'is_admin' => 'required|boolean',
+            'role_id'  => 'required|string|exists:vtiger.vtiger_role,roleid', // Jerarquía
+
             'password' => 'required|string|min:6',
+            'phone_crm'  => 'nullable|string|max:50',
+            'department' => 'nullable|string|max:50',
         ]);
 
         if ($validator->fails()) {
@@ -175,7 +202,9 @@ class UserController extends Controller
             first_name: $requestData['first_name'],
             last_name: $requestData['last_name'],
             email: $requestData['email'],
-            role: $requestData['role'],
+            is_admin: $request->boolean('is_admin'),
+            role_id: $request->input('role_id'),
+            status: $requestData['status'] ?? null,
             password: $requestData['password'],
             phone_crm: $requestData['phone_crm'] ?? null,
             department: $requestData['department'] ?? null,
@@ -191,6 +220,104 @@ class UserController extends Controller
     }
 
     /**
+     * Update an existing user account.
+     * 
+     * PUT /api/users/{id}
+     * 
+     * @param Request $request HTTP request with user update data
+     * @param string $id User ID from route parameter
+     * @return JsonResponse Updated user data or error messages
+     * @throws ValidationException If request validation fails
+     */
+    public function update(Request $request, string $id): JsonResponse
+    {
+        if (!is_numeric($id) || (int) $id <= 0) {
+            return response()->json(['error' => 'Invalid user ID'], 400);
+        }
+
+        $userId = (int) $id;
+        $email = $request->input('email');
+        $genericEmails = [
+            'info@canalwoods.com',
+            'noreply@canalwoods.com',
+            'admin@canalwoods.com',
+        ];
+        $isGeneric = $email && in_array(strtolower(trim($email)), $genericEmails);
+
+        $validator = Validator::make($request->all(), [
+            'user_name' => [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::unique('vtiger.vtiger_users', 'user_name')
+                    ->ignore($userId, 'id')->where('deleted', 0)
+            ],
+            'first_name' => 'nullable|string|max:30',
+            'last_name'  => 'nullable|string|max:30',
+            'email' => $isGeneric
+                ? ['nullable', 'email', 'max:100']
+                : [
+                    'nullable',
+                    'email',
+                    'max:100',
+                    Rule::unique('vtiger.vtiger_users', 'email1')
+                        ->ignore($userId, 'id')->where('deleted', 0)
+                ],
+
+            'is_admin' => 'nullable|boolean',
+            'role_id'  => 'nullable|string|exists:vtiger.vtiger_role,roleid',
+
+            'status'     => 'nullable|in:Active,Inactive,Pending',
+            'phone_crm'  => 'nullable|string|max:50',
+            'department' => 'nullable|string|max:50',
+            'reports_to_id' => 'nullable|integer',
+            'password'   => 'nullable|string|min:6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => 'Validation failed',
+                'messages' => $validator->errors()
+            ], 422);
+        }
+        $authenticatedUser = $request->attributes->get('auth_user');
+        if (!$authenticatedUser) {
+            return response()->json(['error' => 'User not authenticated'], 401);
+        }
+
+        $requestData = array_filter($request->all(), fn($v) => $v !== null);
+        $updateRequest = new UpdateUserRequest(
+            user_name: $requestData['user_name'] ?? null,
+            first_name: $requestData['first_name'] ?? null,
+            last_name: $requestData['last_name'] ?? null,
+            email: $requestData['email'] ?? null,
+            is_admin: $request->boolean('is_admin'),
+            role_id: $request->input('role_id'),
+            status: $requestData['status'] ?? null,
+            phone_crm: $requestData['phone_crm'] ?? null,
+            department: $requestData['department'] ?? null,
+            reports_to_id: isset($requestData['reports_to_id']) ? (int) $requestData['reports_to_id'] : null,
+            password: $requestData['password'] ?? null, // Solo si se quiere cambiar
+        );
+
+        try {
+
+            $updatedUser = $this->updateUserUseCase->execute($userId, $updateRequest, $authenticatedUser->getId());
+
+            return response()->json([
+                'message' => 'User updated successfully',
+                'data' => $updatedUser->toArray()
+            ], 200);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 404);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Error updating user: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Update an existing user's profile information.
      * 
      * PUT /api/users/{id}/profile
@@ -203,8 +330,8 @@ class UserController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'first_name' => 'required|string|max:50',
-            'last_name' => 'required|string|max:50',
-            'user_name' => 'required|string|max:50',
+            'last_name' => 'required|string|max:30',
+            'user_name' => 'required|string|max:30',
             'email' => 'required|email|max:100',
             'role' => 'required|in:Admin,Usuario,Cliente',
         ]);
@@ -263,8 +390,24 @@ class UserController extends Controller
      */
     public function changePassword(Request $request, int $id): JsonResponse
     {
+        if (!is_numeric($id) || (int) $id <= 0) {
+            return response()->json(['error' => 'Invalid user ID'], 400);
+        }
+        $userId = (int) $id;
+
         $validator = Validator::make($request->all(), [
-            'new_password' => 'required|string|min:6',
+            'new_password' => [
+                'required',
+                'string',
+                'min:6',
+                'regex:/[A-Z]/',
+                'regex:/[0-9]/',
+            ],
+            'current_password' => 'nullable|string', // Opcional: verificar contraseña actual
+            'confirm_password' => 'required|string|same:new_password', // Confirmación
+        ], [
+            'new_password.regex' => 'Password must contain at least one uppercase letter and one number',
+            'confirm_password.same' => 'Passwords do not match',
         ]);
 
         if ($validator->fails()) {
@@ -279,28 +422,23 @@ class UserController extends Controller
             return response()->json(['error' => 'User not authenticated'], 401);
         }
 
-        // ✅ Use getter for ID comparison (entity has private properties)
-        if ($authenticatedUser->getId() !== $id && !$authenticatedUser->isAdmin()) {
-            return response()->json(['error' => 'Permission denied to change this password'], 403);
-        }
 
-        $changeRequest = new ChangePasswordRequest(
-            userId: $id,
-            newPassword: $request->new_password
-        );
+
+
+        $dto = ChangePasswordRequest::fromArray([
+            'user_id' => $userId,
+            'new_password' => $request->new_password,
+            'current_password' => $request->current_password,
+        ]);
 
         try {
-            $success = $this->changePasswordUseCase->execute($changeRequest, $authenticatedUser->getId());
+            $this->changePasswordUseCase->execute($dto, $authenticatedUser->getId());
 
-            if ($success) {
-                return response()->json(['message' => 'Password updated successfully']);
-            }
-
-            return response()->json(['error' => 'User not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Error changing password: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['message' => 'Password updated successfully']);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        } catch (RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 404);
         }
     }
 
@@ -317,23 +455,26 @@ class UserController extends Controller
      */
     public function destroy(Request $request, int $id): JsonResponse
     {
+        if (!is_numeric($id) || (int) $id <= 0) {
+            return response()->json(['error' => 'Invalid user ID'], 400);
+        }
+
         $authenticatedUser = $request->attributes->get('auth_user');
         if (!$authenticatedUser) {
             return response()->json(['error' => 'User not authenticated'], 401);
         }
-
+        $userId = (int) $id;
         try {
-            $success = $this->deleteUserUseCase->execute($id, $authenticatedUser->getId());
+            $success = $this->deleteUserUseCase->execute($userId, $authenticatedUser->getId());
+            if (!$success) {
+                return response()->json(['error' => 'User not found or already deleted'], 404);
+            }   
 
-            if ($success) {
-                return response()->json(['message' => 'User deleted successfully']);
-            }
-
-            return response()->json(['error' => 'User not found or already deleted'], 404);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage()
-            ], 403);
+            return response()->json(['message' => 'User deleted successfully']);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 403); // Forbidden
+        } catch (RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 404); // Not found
         }
     }
 
@@ -358,7 +499,7 @@ class UserController extends Controller
             return response()->json(['error' => 'User not found'], 404);
         }
 
-       
+
         return response()->json([
             'data' => UserDto::fromEntity($userEntity)
         ]);

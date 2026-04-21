@@ -226,7 +226,7 @@
                 <td class="quote-meta" valign="top">
                     <h2>{{ $quote->quoteno }}</h2>
                     <p>@CanalWoods</p>
-                    <p>{{ \Carbon\Carbon::parse($quote->createdtime)->format('d/m/Y') }}</p>
+                    <p>{{ strtoupper(\Carbon\Carbon::parse($quote->createdtime)->locale('es')->translatedFormat('d/M/Y')) }}</p>
                     <p>www.canalwoods.com</p>
                 </td>
             </tr>
@@ -252,17 +252,17 @@
                 @php
                 $is_array = is_array($item);
                 $quantity = $is_array ? ($item['quantity'] ?? 1) : ($item->quantity ?? 1);
-                $productname = $is_array ? ($item['productname'] ?? '') : ($item->productname ?? '');
                 $description = $is_array ? ($item['description'] ?? '') : ($item->description ?? '');
+                $comment = $is_array ? ($item['comment'] ?? '') : ($item->comment ?? '');
                 $listprice = $is_array ? ($item['listprice'] ?? 0) : ($item->listprice ?? 0);
                 $total = $is_array ? ($item['total'] ?? 0) : ($item->total ?? 0);
                 @endphp
                 <tr>
                     <td class="qty">{{ $quantity }}</td>
                     <td class="name">
-                        <strong>{{ $productname }}</strong>
-                        @if($description)
-                        <br><span class="small">{{ $description }}</span>
+                        <strong>{{ $description }}</strong>
+                        @if($comment)
+                        <br><span class="small">{{ $comment }}</span>
                         @endif
                     </td>
                     <td class="price">${{ number_format($listprice, 2, '.', ',') }}</td>

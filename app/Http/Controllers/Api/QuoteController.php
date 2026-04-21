@@ -184,8 +184,8 @@ class QuoteController extends Controller
             'validtill' => 'nullable|date',
             'closingdate' => 'nullable|date',
             'items' => 'required|array|min:1',
-            'items.*.productname' => 'required|string',
-            'items.*.description' => 'nullable|string',
+            'items.*.description' => 'required|string',
+            'items.*.comment' => 'nullable|string',
             'items.*.quantity' => 'required|numeric|min:0.001',
             'items.*.listprice' => 'required|numeric|min:0',
             'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
@@ -338,8 +338,8 @@ class QuoteController extends Controller
             'validtill' => 'nullable|date',
             'closingdate' => 'nullable|date',
             'items' => 'required|array|min:1',
-            'items.*.productname' => 'required|string',
             'items.*.description' => 'nullable|string',
+            'items.*.comment' => 'nullable|string',
             'items.*.quantity' => 'required|numeric|min:0.001',
             'items.*.listprice' => 'required|numeric|min:0',
             'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
@@ -477,11 +477,11 @@ class QuoteController extends Controller
             return [
                 'productid' => $item['productid'] ?? null,
                 'sequence_no' => $item['sequence_no'],
-                'productname' => $item['productname'],
                 'quantity' => (float) $item['quantity'],
                 'listprice' => (float) $item['listprice'],
                 'discount_percent' => isset($item['discount_percent']) ? (float) $item['discount_percent'] : 0.0,
                 'description' => $item['description'] ?? null,
+                'comment' => $item['comment'] ?? null,
             ];
         }, $items);
     }

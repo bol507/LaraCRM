@@ -148,7 +148,6 @@ class ProjectRepository implements ProjectRepositoryInterface
             'last_activity'
         ];
 
-
         $sortBy = $sortBy && in_array($sortBy, $allowedSortColumns, true)
             ? $sortBy
             : 'last_activity';
@@ -188,9 +187,11 @@ class ProjectRepository implements ProjectRepositoryInterface
                 GREATEST(
                     COALESCE(vtiger_crmentity.modifiedtime, '1970-01-01 00:00:00'),
                     COALESCE((
-                        SELECT MAX(c.createdtime) 
-                        FROM vtiger_modcomments c 
+                        SELECT MAX(ce.createdtime)
+                        FROM vtiger_modcomments c
+                        JOIN vtiger_crmentity ce ON c.modcommentsid = ce.crmid
                         WHERE c.related_to = vtiger_project.projectid
+                        AND ce.deleted = 0
                     ), '1970-01-01 00:00:00'),
                     COALESCE((
                         SELECT MAX(att_cr.createdtime)

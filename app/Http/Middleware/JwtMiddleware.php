@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Domain\Entities\User;
+use App\Infrastructure\Mappers\UserMapper;
 use App\Models\VtigerUser;
 use App\Services\JwtService;
 use Closure;
@@ -44,20 +45,8 @@ class JwtMiddleware
             return response()->json(['error' => 'Usuario no encontrado o inactivo'], 401);
         }
 
-        
-        $domainUser = User::fromArray([
-            'id' => $vtigerUser->id,
-            'user_name' => $vtigerUser->user_name,
-            'first_name' => $vtigerUser->first_name,
-            'last_name' => $vtigerUser->last_name,
-            'email' => $vtigerUser->email1,
-            'role' => $vtigerUser->is_admin === '1' ? 'Admin' : 'Usuario',
-            'status' => $vtigerUser->status,
-            'phone_crm' => $vtigerUser->phone_crm_extension,
-            'department' => $vtigerUser->department,
-            'reports_to_id' => $vtigerUser->reports_to_id,
-            'is_active' => $vtigerUser->status === 'Active',
-        ]);
+        $domainUser = UserMapper::toDomain($vtigerUser);
+
 
         
         $request->attributes->set('auth_user', $domainUser);

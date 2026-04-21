@@ -2,6 +2,7 @@
 
 namespace App\Infrastructure\Repositories\Core;
 
+use App\Application\Repositories\CrmentityRepositoryInterface;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -12,7 +13,7 @@ use Illuminate\Support\Facades\DB;
  * - Soft delete management (deleted flag)
  * - Entity type resolution
  */
-class CrmentityRepository
+class CrmentityRepository implements CrmentityRepositoryInterface
 {
     private const TABLE = 'vtiger_crmentity';
 
@@ -85,15 +86,18 @@ class CrmentityRepository
 
     /**
      * Soft delete an entity
+     * @param  int  $crmid  The entity ID to update
+     * @return bool True if rows were affected
      */
     public function delete(int $crmid): bool
     {
+        $now = now()->format('Y-m-d H:i:s');
         $affected = DB::connection($this->connection)
             ->table(self::TABLE)
             ->where('crmid', $crmid)
             ->update([
                 'deleted' => 1,
-                'modifiedtime' => now()->format('Y-m-d H:i:s'),
+                'modifiedtime' => $now,
             ]);
 
         return $affected > 0;

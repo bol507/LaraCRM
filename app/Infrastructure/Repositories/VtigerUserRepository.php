@@ -9,7 +9,6 @@ use App\Domain\Entities\User;
 use App\Infrastructure\Mappers\UserMapper;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -39,6 +38,8 @@ class VtigerUserRepository implements UserRepositoryInterface
     {
         $query = DB::connection('vtiger')
             ->table('vtiger_users')
+            ->leftJoin('vtiger_user2role', 'vtiger_users.id', '=', 'vtiger_user2role.userid')
+            ->leftJoin('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
             ->select(
                 'vtiger_users.id',
                 'vtiger_users.user_name',
@@ -50,18 +51,12 @@ class VtigerUserRepository implements UserRepositoryInterface
                 'vtiger_users.phone_crm_extension as phone_crm_extension',
                 'vtiger_users.department',
                 'vtiger_users.reports_to_id',
-                // ✅ Same fix: subquery for rolename
-                DB::raw('(
-                SELECT vtiger_role.rolename 
-                FROM vtiger_user2role 
-                INNER JOIN vtiger_role ON vtiger_user2role.roleid = vtiger_role.roleid 
-                WHERE vtiger_user2role.userid = vtiger_users.id 
-                LIMIT 1
-            ) as rolename')
+                'vtiger_role.roleid as role_id',
+                'vtiger_role.rolename'
             )
             ->where('vtiger_users.deleted', 0);
 
-        // ✅ Búsqueda
+
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('vtiger_users.first_name', 'LIKE', "%{$search}%")
@@ -87,29 +82,24 @@ class VtigerUserRepository implements UserRepositoryInterface
     public function findById(int $id): ?User
     {
         try {
-            // ✅ CORRECCIÓN: Tu tabla vtiger_users NO tiene roleid
-            // Usar subconsulta para obtener rol desde vtiger_user2role
             $row = DB::connection('vtiger')
                 ->table('vtiger_users')
+                // ✅ LEFT JOIN en lugar de subquery: más eficiente y devuelve role_id + rolename
+                ->leftJoin('vtiger_user2role', 'vtiger_users.id', '=', 'vtiger_user2role.userid')
+                ->leftJoin('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
                 ->select(
                     'vtiger_users.id',
                     'vtiger_users.user_name',
                     'vtiger_users.first_name',
                     'vtiger_users.last_name',
-                    'vtiger_users.email1',
+                    'vtiger_users.email1 as email1',
                     'vtiger_users.is_admin',
                     'vtiger_users.status',
                     'vtiger_users.phone_crm_extension as phone_crm_extension',
                     'vtiger_users.department',
                     'vtiger_users.reports_to_id',
-                    // ✅ Obtener rolename desde vtiger_user2role + vtiger_role (tabla intermedia)
-                    DB::raw('(
-                    SELECT vtiger_role.rolename 
-                    FROM vtiger_user2role 
-                    INNER JOIN vtiger_role ON vtiger_user2role.roleid = vtiger_role.roleid 
-                    WHERE vtiger_user2role.userid = vtiger_users.id 
-                    LIMIT 1
-                ) as rolename')
+                    'vtiger_role.roleid as role_id',
+                    'vtiger_role.rolename'
                 )
                 ->where('vtiger_users.id', $id)
                 ->where('vtiger_users.deleted', 0)
@@ -118,7 +108,6 @@ class VtigerUserRepository implements UserRepositoryInterface
             if (!$row) {
                 return null;
             }
-
 
             return UserMapper::fromDatabaseRow($row);
         } catch (\Exception $e) {
@@ -135,14 +124,7 @@ class VtigerUserRepository implements UserRepositoryInterface
     }
     /**
      * {@inheritDoc}
-     * 
-     * Vtiger-specific: 
-     * - Password must be stored in BOTH 'user_password' AND 'confirm_password' fields
-     * - 'crypt_type' must be set to 'PHASH' for PHP password_hash() compatibility
-     * - Many UI-related fields require default values for proper Vtiger frontend behavior
-     * - Uses database transaction to ensure atomicity of user creation
-     * 
-     * @throws \Exception If database transaction fails, rolled back automatically
+    
      */
     public function create(CreateUserRequest $request, int $createdByUserId): int
     {
@@ -159,7 +141,7 @@ class VtigerUserRepository implements UserRepositoryInterface
                     'first_name' => $request->first_name,
                     'last_name' => $request->last_name,
                     'email1' => $request->email,
-                    'is_admin' => ($request->role === 'Admin') ? '1' : '0',
+                    'is_admin' => $request->is_admin ? '1' : '0',
                     'status' => 'Active',
                     'phone_crm_extension' => $request->phone_crm,
                     'department' => $request->department,
@@ -246,6 +228,63 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
+     */
+    public function insert(CreateUserRequest $request, int $authenticatedUserId): User
+    {
+        $now = now()->format('Y-m-d H:i:s');
+        $hashedPassword = password_hash($request->password, PASSWORD_DEFAULT);
+
+        $userData = [
+            'user_name'             => $request->user_name,
+            'first_name'            => $request->first_name,
+            'last_name'             => $request->last_name,
+            'email1'                => $request->email,
+            'is_admin'              => $request->is_admin ? '1' : '0',
+            'status'                => $request->status ?? 'Active',
+            'user_password'         => $hashedPassword,
+            'confirm_password'      => $hashedPassword,
+            'crypt_type'            => 'PHASH',
+            'phone_crm_extension'   => $request->phone_crm,
+            'department'            => $request->department,
+            'reports_to_id'         => $request->reports_to_id !== null ? (string) $request->reports_to_id : null,
+            'currency_id'           => 1, // Vtiger default
+            'date_entered'          => $now,
+            'date_modified'         => $now,
+            'modified_user_id'      => (string) $authenticatedUserId,
+            'deleted'               => 0,
+            'internal_mailer'       => 1,
+        ];
+
+        // 1. Insertar en vtiger_users (auto_increment en 'id')
+        $newId = DB::connection('vtiger')
+            ->table('vtiger_users')
+            ->insertGetId($userData);
+
+        if (!$newId) {
+            throw new RuntimeException('Failed to insert user record');
+        }
+
+        // 2. Asignar rol jerárquico (vtiger_user2role) si se proporciona
+        if (!empty($request->role_id)) {
+            DB::connection('vtiger')
+                ->table('vtiger_user2role')
+                ->insert([
+                    'userid' => $newId,
+                    'roleid' => $request->role_id
+                ]);
+        }
+
+        // 3. Retornar entidad de dominio recién creada
+        $user = $this->findById($newId);
+        if (!$user) {
+            throw new RuntimeException("Failed to retrieve newly created user with ID {$newId}");
+        }
+
+        return $user;
+    }
+
+    /**
+     * {@inheritDoc}
      * 
      * Vtiger-specific: Updates vtiger_users table with audit fields (date_modified, modified_user_id).
      * Does not update password-related fields (use changePassword() for that).
@@ -305,42 +344,20 @@ class VtigerUserRepository implements UserRepositoryInterface
      */
     public function delete(int $id, int $deletedByUserId): bool
     {
-        // Verify user exists and is active
-        $user = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $id)
-            ->where('deleted', 0)
-            ->first();
+        $now = now()->format('Y-m-d H:i:s');
 
-        if (!$user) {
-            return false;
-        }
-
-        // ⚠️ Authorization check: only admins can delete users
-        $deleterIsAdmin = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $deletedByUserId)
-            ->where('is_admin', '1')
-            ->exists();
-
-        if (!$deleterIsAdmin) {
-            throw new \Exception('Only administrators can delete users');
-        }
-
-        // ⚠️ Prevention: users cannot delete their own account
-        if ($deletedByUserId === $id) {
-            throw new \Exception('You cannot delete your own account');
-        }
-
-        // Perform soft delete
-        return DB::connection('vtiger')
+        $updated = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $id)
             ->update([
                 'deleted' => 1,
-                'date_modified' => now()->format('Y-m-d H:i:s'),
-                'modified_user_id' => $deletedByUserId,
+                'date_modified' => $now,
+                'modified_user_id' => (string) $deletedByUserId,
             ]) > 0;
+        if (!$updated) {
+                throw new RuntimeException('Failed to delete user or user already deleted');
+        }
+        return true;
     }
 
     /**
@@ -405,41 +422,23 @@ class VtigerUserRepository implements UserRepositoryInterface
      */
     public function changePassword(int $userId, string $newPassword, int $modifiedByUserId): bool
     {
-        // Verify user exists
-        $user = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $userId)
-            ->where('deleted', 0)
-            ->first();
-
-        if (!$user) {
-            return false;
-        }
-
-        // ⚠️ Authorization check
-        $modifierIsAdmin = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->where('id', $modifiedByUserId)
-            ->where('is_admin', '1')
-            ->exists();
-
-        if ($modifiedByUserId !== $userId && !$modifierIsAdmin) {
-            throw new \Exception('You do not have permission to change this password');
-        }
-
         $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+        $now = now()->format('Y-m-d H:i:s');
 
-        DB::connection('vtiger')
+        $updated = DB::connection('vtiger')
             ->table('vtiger_users')
             ->where('id', $userId)
             ->update([
                 'user_password' => $hashedPassword,
                 'confirm_password' => $hashedPassword,
                 'crypt_type' => 'PHASH',
-                'date_modified' => now()->format('Y-m-d H:i:s'),
+                'date_modified' => $now,
                 'modified_user_id' => $modifiedByUserId,
             ]);
 
+        if (!$updated) {
+            throw new RuntimeException('Failed to update password');
+        }
         return true;
     }
 
@@ -745,8 +744,6 @@ class VtigerUserRepository implements UserRepositoryInterface
                 ->offset($offset)
                 ->limit($limit)
                 ->get();
-
-            // ✅ Usar mapper para cada fila
             return $rows->map(fn($row) => UserMapper::fromDatabaseRow($row))->toArray();
         } catch (\Exception $e) {
             throw new RuntimeException(
@@ -754,5 +751,40 @@ class VtigerUserRepository implements UserRepositoryInterface
                 previous: $e
             );
         }
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function assignHierarchicalRoleByName(int $userId, string $roleName): bool
+    {
+        $roleId = DB::connection('vtiger')
+            ->table('vtiger_role')
+            ->where('rolename', $roleName)
+            ->value('roleid');
+
+        if (!$roleId) {
+            return false;
+        }
+
+        return DB::connection('vtiger')
+            ->table('vtiger_user2role')
+            ->updateOrInsert(
+                ['userid' => $userId],
+                ['roleid' => $roleId]
+            );
+    }
+
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getHierarchicalRoleName(int $userId): ?string
+    {
+        return DB::connection('vtiger')
+            ->table('vtiger_user2role')
+            ->join('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
+            ->where('vtiger_user2role.userid', $userId)
+            ->value('vtiger_role.rolename');
     }
 }

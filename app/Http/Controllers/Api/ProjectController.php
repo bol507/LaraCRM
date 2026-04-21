@@ -7,9 +7,11 @@ use App\Application\UseCases\Project\GetProjectByIdUseCase;
 use App\Application\UseCases\Project\CreateProjectUseCase;
 use App\Application\UseCases\Project\UpdateProjectUseCase;
 use App\Application\UseCases\Project\DeleteProjectUseCase;
+use App\Application\UseCases\Project\SearchProjectsUseCase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -41,40 +43,7 @@ use Illuminate\Support\Facades\Log;
  */
 class ProjectController extends Controller
 {
-    /**
-     * Use case for retrieving all projects with pagination
-     * 
-     * @var GetAllProjectsUseCase
-     */
-    protected GetAllProjectsUseCase $getAllProjectsUseCase;
-
-    /**
-     * Use case for retrieving a single project by ID
-     * 
-     * @var GetProjectByIdUseCase
-     */
-    protected GetProjectByIdUseCase $getProjectByIdUseCase;
-
-    /**
-     * Use case for creating new projects
-     * 
-     * @var CreateProjectUseCase
-     */
-    protected CreateProjectUseCase $createProjectUseCase;
-
-    /**
-     * Use case for updating existing projects
-     * 
-     * @var UpdateProjectUseCase
-     */
-    protected UpdateProjectUseCase $updateProjectUseCase;
-
-    /**
-     * Use case for deleting projects
-     * 
-     * @var DeleteProjectUseCase
-     */
-    protected DeleteProjectUseCase $deleteProjectUseCase;
+    
 
     /**
      * Constructor with dependency injection
@@ -86,18 +55,13 @@ class ProjectController extends Controller
      * @param DeleteProjectUseCase $deleteProjectUseCase Use case for deleting projects
      */
     public function __construct(
-        GetAllProjectsUseCase $getAllProjectsUseCase,
-        GetProjectByIdUseCase $getProjectByIdUseCase,
-        CreateProjectUseCase $createProjectUseCase,
-        UpdateProjectUseCase $updateProjectUseCase,
-        DeleteProjectUseCase $deleteProjectUseCase
-    ) {
-        $this->getAllProjectsUseCase = $getAllProjectsUseCase;
-        $this->getProjectByIdUseCase = $getProjectByIdUseCase;
-        $this->createProjectUseCase = $createProjectUseCase;
-        $this->updateProjectUseCase = $updateProjectUseCase;
-        $this->deleteProjectUseCase = $deleteProjectUseCase;
-    }
+        private readonly GetAllProjectsUseCase $getAllProjectsUseCase,
+        private readonly GetProjectByIdUseCase $getProjectByIdUseCase,
+        private readonly CreateProjectUseCase $createProjectUseCase,
+        private readonly UpdateProjectUseCase $updateProjectUseCase,
+        private readonly DeleteProjectUseCase $deleteProjectUseCase,
+        private readonly SearchProjectsUseCase $searchProjectsUseCase,
+    ) { }
 
     /**
      * Get all projects with pagination and filtering
@@ -197,7 +161,7 @@ class ProjectController extends Controller
     {
         try {
             //  Execute use case to fetch project by ID
-            $project = $this->getProjectByIdUseCase->execute($id);
+            $project = $this->getProjectByIdUseCase->execute((int)$id);
 
             if (!$project) {
                 //  Project not found (404 Not Found)
@@ -409,4 +373,17 @@ class ProjectController extends Controller
             ], 500);
         }
     }
+
+    public function search(Request $request): JsonResponse
+{
+    try {
+        $searchTerm = $request->get('search', '');
+        
+        $results = $this->searchProjectsUseCase->execute($searchTerm);
+
+        return response()->json(['data' => $results]);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
 }

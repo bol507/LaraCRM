@@ -67,18 +67,21 @@ interface UserRepositoryInterface
     public function findByUserName(string $userName): ?User;
 
     /**
-     * Create a new user account.
-     * 
-     * Validates that username and email are unique before creation.
-     * Sets initial status to 'Active' and creates audit trail entry.
-     * 
-     * @param CreateUserRequest $request Data transfer object with user information
-     * @param int $createdByUserId ID of the authenticated user creating this account
-     * @return int The newly created user's ID
-     * @throws \DomainException If username or email already exists
-     * @throws \InvalidArgumentException If validation fails
+     * {@deprecated} Use insert() instead
      */
     public function create(CreateUserRequest $request, int $createdByUserId): int;
+
+    /**
+     * Insert a new user into Vtiger and assign hierarchical role.
+     *
+     * @param CreateUserRequest $request Validated creation DTO
+     * @param int $authenticatedUserId ID of the admin creating the user (for audit)
+     * @return User Newly created domain entity
+     *
+     * @throws RuntimeException If persistence fails or entity cannot be retrieved
+     * @note Should be called within a DB transaction from the UseCase
+     */
+    public function insert(CreateUserRequest $request, int $authenticatedUserId): User;
 
     /**
      * Update an existing user's profile information.
@@ -219,4 +222,18 @@ interface UserRepositoryInterface
      * @return User[] Array of user entities
      */
     public function findActiveUsers(int $limit = 100, int $offset = 0): array;
+
+    /**
+     * Assign a hierarchical role to a user via vtiger_user2role
+     * 
+     * @param int $userId
+     * @param string $roleName Role name from vtiger_role (e.g., 'CEO', 'Vendedor')
+     * @return bool Success
+     */
+    public function assignHierarchicalRoleByName(int $userId, string $roleName): bool;
+
+    /**
+     * Get the hierarchical role name for a user
+     */
+    public function getHierarchicalRoleName(int $userId): ?string;
 }

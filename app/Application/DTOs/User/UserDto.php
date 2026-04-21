@@ -36,7 +36,11 @@ class UserDto
             'last_name' => $user->getLastName(),
             'full_name' => $user->getFullName(), 
             'email' => $user->getEmail(),
-            'role' => $user->getRole(),
+             
+            'is_admin' => $user->getIsAdmin(),      // boolean
+            'role_id'  => $user->getRoleId(),       // string | null
+            'rolename' => $user->getRoleName(),     // string | null
+            
             'status' => $user->getStatus(),
             'phone_crm' => $user->getPhoneCrm(),
             'department' => $user->getDepartment(),

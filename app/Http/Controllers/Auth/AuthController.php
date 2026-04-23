@@ -8,6 +8,7 @@ use App\Application\DTOs\Auth\ResetPasswordRequest;
 use App\Application\UseCases\Auth\LoginUseCase;
 use App\Application\UseCases\Auth\RequestPasswordResetUseCase;
 use App\Application\UseCases\Auth\ResetPasswordUseCase;
+use App\Application\UseCases\Role\GetUserRoleUseCase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class AuthController extends Controller
         private readonly LoginUseCase $loginUseCase,
         private readonly RequestPasswordResetUseCase $requestResetUseCase,
         private readonly ResetPasswordUseCase $resetPasswordUseCase,
+        private readonly GetUserRoleUseCase $getUserRoleUseCase
     ) {}
 
     /**
@@ -30,7 +32,7 @@ class AuthController extends Controller
      */
     public function login(Request $request): JsonResponse
     {
-        // === RATE LIMITING: 5 attempts per 5 seconds ===
+        // Rate limiting: 5 attempts per 5 seconds
         $throttleKey = 'login:' . strtolower($request->input('user_name') ?? '') . '|' . $request->ip();
 
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
@@ -50,31 +52,23 @@ class AuthController extends Controller
         }
 
         try {
-            // Validación HTTP
+            // HTTP validation
             $validated = $request->validate([
                 'user_name' => 'required|string',
                 'password' => 'required|string',
             ]);
 
-            // DTO con validación de dominio
+            // DTO with domain validation
             $dto = LoginRequest::fromArray($validated);
 
-            // Ejecutar caso de uso
+            // Execute use case
             $result = $this->loginUseCase->execute($dto);
 
             RateLimiter::clear($throttleKey);
 
-            Log::info('User logged in successfully', [
-                'user_id' => $result['user_id'],
-                'user_name' => $result['user_name'],
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-            ]);
-
             return response()->json([
                 'message' => 'Login successful',
                 'access_token' => $result['access_token'],
-                'token' => $result['token'],
                 'token_type' => $result['token_type'],
                 'expires_in' => $result['expires_in'],
                 'user' => $result['user'],
@@ -151,5 +145,74 @@ class AuthController extends Controller
         } catch (RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getMessage() === 'User not found' ? 404 : 500);
         }
+    }
+
+    /**
+     * POST /api/auth/logout
+     * Log out the authenticated user.
+     */
+    public function logout(Request $request): JsonResponse
+    {
+        $authenticatedUser = $request->attributes->get('auth_user');
+        $userId = $authenticatedUser?->getId() ?? 'unknown';
+
+        Log::info('User logged out', [
+            'user_id' => $userId,
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'timestamp' => now()->toISOString(),
+        ]);
+
+        return response()->json([
+            'message' => 'Session closed successfully',
+            'data' => ['user_id' => $userId],
+        ], 200);
+    }
+
+    /**
+     * GET /api/auth/me
+     * Get the authenticated user's profile.
+     */
+    public function me(Request $request): JsonResponse
+    {
+        /** @var User|null $authenticatedUser */
+        $authenticatedUser = $request->attributes->get('auth_user');
+
+        if (!$authenticatedUser) {
+            return response()->json(['error' => 'Unauthenticated user'], 401);
+        }
+
+        // Fetch dynamic hierarchical role (no hardcoding)
+        $roleData = $this->getUserRoleUseCase->execute($authenticatedUser->getId());
+
+        return response()->json([
+            'data' => [
+                // Identity
+                'id' => $authenticatedUser->getId(),
+                'user_name' => $authenticatedUser->getUserName(),
+                'first_name' => $authenticatedUser->getFirstName(),
+                'last_name' => $authenticatedUser->getLastName(),
+                'full_name' => $authenticatedUser->getFullName(),
+                'email' => $authenticatedUser->getEmail(),
+
+                // New role architecture (source of truth)
+                'is_admin' => $authenticatedUser->getIsAdmin(),
+                'role_id' => $roleData['role_id'] ?? null,
+                'rolename' => $roleData['rolename'] ?? null,
+                'role_depth' => $roleData['depth'] ?? 0,
+                'role_parent' => $roleData['parentrole'] ?? null,
+                'sharing_rule' => $roleData['sharing_rule'] ?? 1,
+
+                // Profile and status
+                'status' => $authenticatedUser->getStatus(),
+                'department' => $authenticatedUser->getDepartment(),
+                'phone_crm' => $authenticatedUser->getPhoneCrm(),
+                'reports_to_id' => $authenticatedUser->getReportsToId(),
+                'is_active' => $authenticatedUser->isActive(),
+
+                // Legacy: only for compatibility with old frontend
+                'role' => $authenticatedUser->getRole(),
+            ]
+        ], 200);
     }
 }

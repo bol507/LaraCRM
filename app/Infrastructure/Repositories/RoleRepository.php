@@ -70,7 +70,7 @@ class RoleRepository implements RoleRepositoryInterface
             ->table(self::USER_ROLE_TABLE) // vtiger_user2role
             ->join('vtiger_role', self::USER_ROLE_TABLE . '.roleid', '=', 'vtiger_role.roleid')
             ->where(self::USER_ROLE_TABLE . '.userid', $userId)
-            ->where('vtiger_role.deleted', 0)
+            //->where('vtiger_role.deleted', 0)
             ->select(
                 'vtiger_role.roleid',
                 'vtiger_role.rolename',
@@ -186,7 +186,7 @@ class RoleRepository implements RoleRepositoryInterface
         $role = DB::connection(self::CONNECTION)
             ->table(self::ROLE_TABLE)
             ->where('roleid', $roleId)
-            ->where('deleted', 0)
+            //->where('deleted', 0)
             ->first();
 
         if (!$role) {
@@ -246,7 +246,7 @@ class RoleRepository implements RoleRepositoryInterface
                 ->table(self::ROLE_TABLE)
                 ->where('roleid', $roleId)
                 ->update([
-                    'deleted' => 1,
+                    //'deleted' => 1,
                     'date_modified' => $now,
                     'modified_user_id' => (string) $authenticatedUserId,
                 ]);

@@ -24,7 +24,7 @@ use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Auth\AuthController;
 
 Route::prefix('auth')->group(function () {
-    Route::post('/login', [LoginController::class, 'login']);
+    Route::post('/login', [AuthController::class, 'login']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);

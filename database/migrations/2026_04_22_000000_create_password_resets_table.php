@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('email', 100)->index();
             $table->string('token', 255)->index();
             $table->timestamp('created_at')->useCurrent();
-            $table->timestamp('expires_at');
+            $table->timestamp('expires_at')->nullable();
             $table->boolean('used')->default(false);
         });
     }

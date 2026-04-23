@@ -6,7 +6,7 @@ use App\Application\Repositories\RoleRepositoryInterface;
 use App\Application\UseCases\Role\GetUserHierarchicalRoleUseCase;
 use App\Http\Controllers\Controller;
 use App\Models\VtigerUser;
-use App\Domain\Entities\User; 
+use App\Domain\Entities\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Services\JwtService;
@@ -14,10 +14,10 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Authentication controller for user login/logout operations.
- * 
+ *
  * Handles user authentication using Vtiger CRM user database.
  * Uses Eloquent models directly for auth (acceptable for presentation layer).
- * 
+ *
  * @package App\Http\Controllers\Auth
  * @see \App\Http\Middleware\JwtMiddleware
  */
@@ -28,9 +28,9 @@ class LoginController extends Controller
     ) {}
     /**
      * Authenticate user and return JWT token.
-     * 
+     *
      * POST /api/auth/login
-     * 
+     *
      * @param Request $request HTTP request with credentials
      * @param JwtService $jwtService JWT token service
      * @return JsonResponse Authentication result with token
@@ -81,11 +81,11 @@ class LoginController extends Controller
             'token_type' => 'bearer',
             'expires_in' => 3600, // 1 hour (should match JWT config)
             'user' => [
-                'id' => $vtigerUser->id,             
-                'user_name' => $vtigerUser->user_name, 
+                'id' => $vtigerUser->id,
+                'user_name' => $vtigerUser->user_name,
                 'first_name' => $vtigerUser->first_name ?? '',
                 'last_name' => $vtigerUser->last_name ?? '',
-                'email' => $vtigerUser->email1 ?? '',  // 
+                'email' => $vtigerUser->email1 ?? '',  //
                 'role' => $vtigerUser->is_admin === '1' ? 'Admin' : 'Usuario',
                 'status' => $vtigerUser->status,
             ]
@@ -94,9 +94,9 @@ class LoginController extends Controller
 
     /**
      * Logout user (invalidate token on client side).
-     * 
+     *
      * POST /api/auth/logout
-     * 
+     *
      * @param Request $request HTTP request
      * @return JsonResponse Logout confirmation
      */
@@ -116,9 +116,9 @@ class LoginController extends Controller
 
     /**
      * Get current authenticated user profile.
-     * 
+     *
      * GET /api/auth/me
-     * 
+     *
      * @param Request $request HTTP request with authenticated user
      * @return JsonResponse Current user profile data
      */
@@ -142,10 +142,10 @@ class LoginController extends Controller
                 'last_name' => $authenticatedUser->getLastName(),
                 'email' => $authenticatedUser->getEmail(),
 
-                'is_admin' => $authenticatedUser->isAdmin(),     
-                'role_id' => $hierarchicalRole['role_id'] ?? null, 
+                'is_admin' => $authenticatedUser->isAdmin(),
+                'role_id' => $hierarchicalRole['role_id'] ?? null,
                 'rolename' => $hierarchicalRole['rolename'] ?? null,
-                     
+
                 'status' => $authenticatedUser->getStatus(),
                 'department' => $authenticatedUser->getDepartment(),
                 'phone' => $authenticatedUser->getPhoneCrm(),
@@ -157,9 +157,9 @@ class LoginController extends Controller
 
     /**
      * Verify password with support for multiple Vtiger crypt types.
-     * 
+     *
      * Vtiger supports: PHASH (PHP password_hash), MD5, CRYPT
-     * 
+     *
      * @param string $inputPassword Plain text password from login form
      * @param VtigerUser $user Vtiger user model with stored password
      * @return bool True if password matches, false otherwise

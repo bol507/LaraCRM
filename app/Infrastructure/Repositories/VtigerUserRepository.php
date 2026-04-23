@@ -15,10 +15,10 @@ use RuntimeException;
 
 /**
  * Vtiger-specific implementation of UserRepositoryInterface.
- * 
+ *
  * Handles persistence logic for User entities using Vtiger CRM database schema.
  * Maps Vtiger-specific fields (email1, is_admin, etc.) to domain entity properties.
- * 
+ *
  * @package App\Infrastructure\Repositories
  * @implements UserRepositoryInterface
  * @see \App\Domain\Entities\User
@@ -38,7 +38,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Queries vtiger_users table with soft-delete filter (deleted = 0).
      * Maps database fields to domain properties: email1 → email, is_admin → role.
      * Uses manual pagination for compatibility with Vtiger schema.
@@ -94,7 +94,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Queries vtiger_users with soft-delete filter.
      * Returns null if user not found or marked as deleted.
      */
@@ -155,7 +155,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Splits full name into first/last name components for separate field queries.
      * Returns array format (not User entity) for lightweight search results.
      */
@@ -198,7 +198,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Searches across first_name, last_name, user_name, and email1 fields.
      * Limited to 20 results for autocomplete performance.
      * Returns array format for lightweight frontend consumption.
@@ -219,10 +219,10 @@ class VtigerUserRepository implements UserRepositoryInterface
                 'vtiger_users.department',
                 'vtiger_users.reports_to_id',
                 DB::raw('(
-                SELECT vtiger_role.rolename 
-                FROM vtiger_user2role 
-                INNER JOIN vtiger_role ON vtiger_user2role.roleid = vtiger_role.roleid 
-                WHERE vtiger_user2role.userid = vtiger_users.id 
+                SELECT vtiger_role.rolename
+                FROM vtiger_user2role
+                INNER JOIN vtiger_role ON vtiger_user2role.roleid = vtiger_role.roleid
+                WHERE vtiger_user2role.userid = vtiger_users.id
                 LIMIT 1
             ) as rolename')
             )
@@ -243,7 +243,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Queries email1 field (case-insensitive via LOWER).
      * Returns null if user not found, inactive, or soft-deleted.
      */
@@ -284,7 +284,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Usernames are case-sensitive in Vtiger.
      * Returns null if user not found, inactive, or soft-deleted.
      */
@@ -325,7 +325,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Maps role name to is_admin flag for filtering.
      * Returns all active users with matching role, ordered by creation date.
      */
@@ -373,6 +373,18 @@ class VtigerUserRepository implements UserRepositoryInterface
             return UserMapper::fromDatabaseRow($row, $roleData);
         })->toArray();
     }
+    /**
+     * {@inheritDoc}
+     */
+    public function findForAuthentication(string $userName): ?array
+    {
+        $row = $this->query()
+            ->where('user_name', $userName)
+            ->where('deleted', 0)
+            ->select('id', 'user_password', 'status', 'is_admin', 'crypt_type')
+            ->first();
+        return $row ? (array) $row : null;
+    }
 
     /**
      * {@inheritDoc}
@@ -417,7 +429,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-    
+
      */
     public function create(CreateUserRequest $request, int $createdByUserId): int
     {
@@ -580,7 +592,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Updates vtiger_users table with audit fields (date_modified, modified_user_id).
      * Does not update password-related fields (use changePassword() for that).
      * Returns false if user not found or marked as deleted.
@@ -634,11 +646,11 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Implements soft-delete by setting 'deleted = 1' instead of removing row.
      * Authorization: Only users with is_admin = '1' can delete other users.
      * Prevention: Users cannot delete their own account via this method.
-     * 
+     *
      * @throws \Exception If caller lacks admin privileges or attempts self-deletion
      */
     public function delete(int $id, int $deletedByUserId): bool
@@ -684,12 +696,12 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
-     * Vtiger-specific: 
+     *
+     * Vtiger-specific:
      * - Password hashed with PASSWORD_DEFAULT and stored with crypt_type = 'PHASH'
      * - Authorization: Users can only change their own password, unless caller is admin
      * - Updates audit fields (date_modified, modified_user_id) for compliance
-     * 
+     *
      * @throws \Exception If caller lacks permission to change the target user's password
      */
     public function changePassword(int $userId, string $newPassword, int $modifiedByUserId): bool
@@ -729,7 +741,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Checks user_name field with case-sensitive comparison.
      * Excludes soft-deleted users from availability check.
      */
@@ -748,7 +760,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Checks email1 field with case-insensitive comparison.
      * Excludes soft-deleted users from availability check.
      */
@@ -767,7 +779,7 @@ class VtigerUserRepository implements UserRepositoryInterface
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * Vtiger-specific: Counts users with status = 'Active' and deleted = 0.
      * Optimized query using COUNT(*) instead of loading all records.
      */

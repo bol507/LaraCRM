@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Http\Controllers\Auth;
+
 use App\Application\DTOs\Auth\LoginRequest;
 use App\Application\DTOs\Auth\RequestPasswordResetRequest;
 use App\Application\DTOs\Auth\ResetPasswordRequest;
@@ -11,7 +13,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
+use InvalidArgumentException;
+use RuntimeException;
 
 class AuthController extends Controller
 {
@@ -27,7 +30,7 @@ class AuthController extends Controller
      */
     public function login(Request $request): JsonResponse
     {
-        // === RATE LIMITING: 5 intentos por minuto por usuario+IP ===
+        // === RATE LIMITING: 5 attempts per 5 seconds ===
         $throttleKey = 'login:' . strtolower($request->input('user_name') ?? '') . '|' . $request->ip();
 
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
@@ -59,10 +62,8 @@ class AuthController extends Controller
             // Ejecutar caso de uso
             $result = $this->loginUseCase->execute($dto);
 
-            // ✅ Login exitoso: limpiar contador de rate limit
             RateLimiter::clear($throttleKey);
 
-            // ✅ Log de éxito para auditoría (sin password)
             Log::info('User logged in successfully', [
                 'user_id' => $result['user_id'],
                 'user_name' => $result['user_name'],
@@ -79,7 +80,6 @@ class AuthController extends Controller
                 'user' => $result['user'],
             ], 200);
         } catch (InvalidArgumentException $e) {
-            // ✅ Credenciales inválidas: incrementar contador
             RateLimiter::hit($throttleKey, 60);
 
             Log::warning('Login failed: invalid credentials', [
@@ -87,14 +87,11 @@ class AuthController extends Controller
                 'ip' => $request->ip(),
                 'reason' => $e->getMessage(),
             ]);
-
-            // ⚠️ Mensaje genérico para no revelar si el usuario existe
             return response()->json([
                 'error' => 'Invalid credentials',
                 'message' => 'The provided username or password is incorrect',
             ], 401);
         } catch (RuntimeException $e) {
-            // ✅ Error de sistema: no incrementar rate limit (no es culpa del usuario)
             Log::error('Login failed: system error', [
                 'user_name' => $request->input('user_name'),
                 'ip' => $request->ip(),

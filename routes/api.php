@@ -21,16 +21,16 @@ use App\Http\Controllers\Api\RoleProfileController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VendorController;
-
+use App\Http\Controllers\Auth\AuthController;
 
 Route::prefix('auth')->group(function () {
     Route::post('/login', [LoginController::class, 'login']);
-    Route::post('/logout', [LoginController::class, 'logout']);
+    Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 })->middleware('jwt')
     ->group(function () {
-        Route::get('/me', [LoginController::class, 'me']);
+        Route::get('/me', [AuthController::class, 'me']);
     });
 
 
@@ -44,7 +44,7 @@ Route::middleware('jwt')->group(function () {
 
 
 
-        //  Admin only 
+        //  Admin only
         Route::middleware('requireAdmin')->group(function () {
             Route::get('/', [UserController::class, 'index']);
             Route::post('/', [UserController::class, 'store']);
@@ -138,7 +138,7 @@ Route::middleware('jwt')->group(function () {
         Route::delete('/{id}', [ProjectController::class, 'destroy']);
     });
 
-    // Comment 
+    // Comment
     Route::prefix('comments')->group(function () {
         Route::get('/{commentId}', [CommentController::class, 'show']);
         Route::delete('/{commentId}', [CommentController::class, 'destroy']);
@@ -147,7 +147,7 @@ Route::middleware('jwt')->group(function () {
         Route::patch('/{module}/{relatedId}/{commentId}', [CommentController::class, 'update']);
     });
 
-    // Attachment 
+    // Attachment
     Route::prefix('attachments')->group(function () {
         Route::post('/{module}/{recordId}', [AttachmentController::class, 'upload']);
         Route::get('/{module}/{recordId}', [AttachmentController::class, 'index']);

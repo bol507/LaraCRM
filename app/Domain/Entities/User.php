@@ -6,10 +6,10 @@ use InvalidArgumentException;
 
 /**
  * Represents a user entity with business rules and validation.
- * 
+ *
  * This entity enforces domain rules for user data integrity and provides
  * meaningful business methods instead of simple getters/setters.
- * 
+ *
  * @package App\Domain\Entities
  * @see \App\Application\UseCases\User\UpdateUserProfileUseCase
  * @author Bolivar Delgado <bolivar.delgado@gmail.com>
@@ -24,7 +24,7 @@ class User
     private string $firstName;
     private string $lastName;
     private string $email;
-    
+
     // Status & contact
     private string $status;
     private ?string $phoneCrm;
@@ -45,9 +45,9 @@ class User
     private int $role_depth = 0;          // Depth in hierarchy: 0, 1, 2...
     private ?string $role_parent = null;  // Parent path: 'H1::H2::'
     private int $sharing_rule = 1;        // Data sharing rule: 0,1,2,3
-    
+
     // ==================== CONSTRUCTOR ====================
-    
+
     public function __construct(
         // Core identity (required)
         int $id,
@@ -55,22 +55,22 @@ class User
         string $firstName,
         string $lastName,
         string $email,
-        
+
         // Status & contact
         string $status,
         ?string $phoneCrm = null,
         ?string $department = null,
         ?int $reportsToId = null,
         bool $isActive = true,
-        
-        // ✅ New role architecture (primary)
+
+        //  New role architecture (primary)
         bool $is_admin = false,
         ?string $role_id = null,
         ?string $rolename = null,
         int $role_depth = 0,
         ?string $role_parent = null,
         int $sharing_rule = 1,
-        
+
         // Legacy role (fallback only, deprecated)
         ?string $role = null, // Nullable: computed if not provided
     ) {
@@ -93,7 +93,7 @@ class User
         $this->department = $department;
         $this->reportsToId = $reportsToId;
         $this->isActive = $isActive;
-        
+
         // New role fields
         $this->is_admin = $is_admin;
         $this->role_id = $role_id;
@@ -101,7 +101,7 @@ class User
         $this->role_depth = $role_depth;
         $this->role_parent = $role_parent;
         $this->sharing_rule = $sharing_rule;
-        
+
         // Legacy role: compute fallback only if not provided
         $this->role = $role ?? $this->computeLegacyRole($is_admin, $rolename);
     }
@@ -113,11 +113,11 @@ class User
     public function getUserName(): string { return $this->userName; }
     public function getFirstName(): string { return $this->firstName; }
     public function getLastName(): string { return $this->lastName; }
-    
+
     public function getFullName(): string {
         return trim("{$this->firstName} {$this->lastName}");
     }
-    
+
     public function getEmail(): string { return $this->email; }
     public function getStatus(): string { return $this->status; }
     public function getPhoneCrm(): ?string { return $this->phoneCrm; }
@@ -160,15 +160,15 @@ class User
      */
     public function getRolePath(): array
     {
-        $path = $this->role_parent 
+        $path = $this->role_parent
             ? array_filter(explode('::', trim($this->role_parent, ':')), fn($id) => !empty($id))
             : [];
-        
+
         // Add current role if not already included
         if ($this->role_id && !in_array($this->role_id, $path, true)) {
             $path[] = $this->role_id;
         }
-        
+
         return $path;
     }
 
@@ -176,7 +176,7 @@ class User
 
     /**
      * Check if user has system administrator privileges
-     * 
+     *
      */
     public function isAdmin(): bool
     {
@@ -192,12 +192,12 @@ class User
         if (!$this->isActive) {
             return false;
         }
-        
+
         //  Admin system OR roles ejecutivos configurados
         if ($this->isAdmin()) {
             return true;
         }
-        
+
         //  Opcional: permitir roles jerárquicos ejecutivos
         $executiveRoles = ['CEO', 'Vice President', 'Director General'];
         return in_array($this->rolename, $executiveRoles, true);
@@ -318,14 +318,14 @@ class User
 
     /**
      * Create User from array (repository mapping)
-     * 
+     *
      */
     public static function fromArray(array $data): self
     {
         $firstName = trim($data['first_name'] ?? '') ?: ($data['user_name'] ?? 'Usuario');
         $lastName  = trim($data['last_name'] ?? '') ?: '';
-        
-       
+
+
         $is_admin_raw = $data['is_admin'] ?? '0';
         $is_admin = in_array($is_admin_raw, ['1', 'on', 'yes', true, 1], true);
 
@@ -336,14 +336,14 @@ class User
             firstName: $firstName,
             lastName: $lastName,
             email: trim($data['email'] ?? $data['email1'] ?? ''),
-            
+
             // Status & contact
             status: $data['status'] ?? 'Active',
             phoneCrm: $data['phone_crm'] ?? $data['phone_crm_extension'] ?? null,
             department: $data['department'] ?? null,
             reportsToId: isset($data['reports_to_id']) ? (int) $data['reports_to_id'] : null,
             isActive: ($data['is_active'] ?? true) && ($data['status'] ?? 'Active') === 'Active',
-            
+
             //  New role architecture (from DB)
             is_admin: $is_admin,
             role_id: $data['role_id'] ?? null,
@@ -351,9 +351,9 @@ class User
             role_depth: (int) ($data['role_depth'] ?? 0),
             role_parent: $data['role_parent'] ?? null,
             sharing_rule: (int) ($data['sharing_rule'] ?? 1),
-            
+
             // ⚠️ Legacy role: computed automatically if not provided
-            role: $data['role'] ?? null, 
+            role: $data['role'] ?? null,
         );
     }
 
@@ -371,14 +371,14 @@ class User
             'last_name' => $this->lastName,
             'full_name' => $this->getFullName(),
             'email' => $this->email,
-            
+
             // Status & contact
             'status' => $this->status,
             'phone_crm' => $this->phoneCrm,
             'department' => $this->department,
             'reports_to_id' => $this->reportsToId,
             'is_active' => $this->isActive,
-            
+
             //  New role architecture (PRIMARY - frontend moderno debe usar estos)
             'is_admin' => $this->is_admin,
             'role_id' => $this->role_id,
@@ -386,7 +386,7 @@ class User
             'role_depth' => $this->role_depth,
             'role_parent' => $this->role_parent,
             'sharing_rule' => $this->sharing_rule,
-            
+
             // ⚠️ Legacy role (fallback only, @deprecated)
             'role' => $this->getRole(),
         ];

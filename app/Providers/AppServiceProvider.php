@@ -13,6 +13,7 @@ use App\Application\Repositories\CrmentityRepositoryInterface;
 use App\Application\Repositories\DashboardRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
+use App\Application\Repositories\PasswordResetRepositoryInterface;
 use App\Application\Repositories\ProfileRepositoryInterface;
 use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Application\Repositories\PurchaseRepositoryInterface;
@@ -35,6 +36,7 @@ use App\Infrastructure\Repositories\Core\ActivityRepository;
 use App\Infrastructure\Repositories\Core\CrmentityRepository;
 use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
 use App\Infrastructure\Repositories\Core\SeActivityRelRepository;
+use App\Infrastructure\Repositories\PasswordResetRepository;
 use App\Infrastructure\Repositories\PotentialRepository;
 use App\Infrastructure\Repositories\ProfileRepository;
 use App\Infrastructure\Repositories\ProjectRepository;
@@ -51,6 +53,7 @@ use App\Infrastructure\Repositories\VtigerDashboardRepository;
 use App\Infrastructure\Repositories\VtigerGeneralConditionsRepository;
 use App\Infrastructure\Repositories\VtigerTaskRepository;
 use App\Infrastructure\Repositories\VtigerUserRepository;
+use App\Infrastructure\Services\PasswordVerifier;
 use App\Services\ActivityTrackerWrapper;
 use App\Services\GoogleDrive\GoogleDriveFactory;
 use App\Services\JwtService;
@@ -197,6 +200,12 @@ class AppServiceProvider extends ServiceProvider
             ProfileRepositoryInterface::class,
             ProfileRepository::class
         );
+
+        // PasswordResetRepository
+        $this->app->bind(
+            PasswordResetRepositoryInterface::class,
+            PasswordResetRepository::class
+        );
     }
 
     private function registerServices(): void
@@ -214,5 +223,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(GoogleDriveServiceInterface::class, function ($app) {
             return GoogleDriveFactory::create();
         });
+
+        $this->app->singleton(PasswordVerifier::class);
     }
 }

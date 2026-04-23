@@ -10,12 +10,14 @@ use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\GlobalSearchController;
 use App\Http\Controllers\Api\OpportunityController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\QuotePDFController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\PurchaseController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\RoleProfileController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VendorController;
@@ -24,6 +26,8 @@ use App\Http\Controllers\Api\VendorController;
 Route::prefix('auth')->group(function () {
     Route::post('/login', [LoginController::class, 'login']);
     Route::post('/logout', [LoginController::class, 'logout']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 })->middleware('jwt')
     ->group(function () {
         Route::get('/me', [LoginController::class, 'me']);
@@ -50,12 +54,38 @@ Route::middleware('jwt')->group(function () {
             Route::put('/{id}/change-password', [UserController::class, 'changePassword']);
         });
     });
-
+    // Roles
     Route::prefix('roles')->group(function () {
-        Route::get('/', [RoleController::class, 'index']);                   
-        Route::put('/users/{userId}/role', [RoleController::class, 'assign']);     
+        Route::get('/', [RoleController::class, 'available']); //for roleSelect
+        Route::put('/users/{userId}/role', [RoleController::class, 'assign']);
     });
 
+    Route::prefix('settings')->middleware('requireAdmin')->group(function () {
+        Route::prefix('roles')->group(function () {
+            //  GET /api/settings/roles → Role[] (con counts, sharing_rule, etc.)
+            Route::get('/', [RoleController::class, 'index']);
+            Route::post('/', [RoleController::class, 'store']);
+            Route::put('/{id}', [RoleController::class, 'update']);
+            Route::delete('/{id}', [RoleController::class, 'destroy']);
+
+            //  GET /api/settings/roles/{roleId} → RoleDto
+            Route::put('/{roleId}/profile', [RoleProfileController::class, 'assign']);
+            Route::get('/{roleId}/profile', [RoleProfileController::class, 'show']);
+        });
+        //  GET /api/settings/profiles → Profile[]
+        Route::prefix('profiles')->group(function () {
+            Route::get('/', [ProfileController::class, 'index']);
+            Route::post('/', [ProfileController::class, 'store']);
+            Route::put('/{id}', [ProfileController::class, 'update']);
+        });
+    });
+
+    /*Route::prefix('profiles')->group(function () {
+        Route::get('/', [ProfileController::class, 'index']);
+        Route::post('/', [ProfileController::class, 'store']);
+        Route::put('/{id}', [ProfileController::class, 'update']);
+        Route::delete('/{id}', [ProfileController::class, 'destroy']);
+    });*/
 
     // User profile
     Route::get('/profile', [UserController::class, 'getMyProfile']);

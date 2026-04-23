@@ -13,9 +13,11 @@ use App\Application\Repositories\CrmentityRepositoryInterface;
 use App\Application\Repositories\DashboardRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
+use App\Application\Repositories\ProfileRepositoryInterface;
 use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Application\Repositories\PurchaseRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
+use App\Application\Repositories\RoleProfileAssignmentRepositoryInterface;
 use App\Application\Repositories\RoleRepositoryInterface;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
@@ -34,9 +36,11 @@ use App\Infrastructure\Repositories\Core\CrmentityRepository;
 use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
 use App\Infrastructure\Repositories\Core\SeActivityRelRepository;
 use App\Infrastructure\Repositories\PotentialRepository;
+use App\Infrastructure\Repositories\ProfileRepository;
 use App\Infrastructure\Repositories\ProjectRepository;
 use App\Infrastructure\Repositories\PurchaseRepository;
 use App\Infrastructure\Repositories\QuoteRepository;
+use App\Infrastructure\Repositories\RoleProfileAssignmentRepository;
 use App\Infrastructure\Repositories\RoleRepository;
 use App\Infrastructure\Repositories\ShippingAddressRepository;
 use App\Infrastructure\Repositories\UserRoleAssignmentRepository;
@@ -59,7 +63,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        
+
 
         // Core repositories (singleton - shared across all use cases)
         $this->app->singleton(
@@ -69,7 +73,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ActivityRepository::class);
         $this->app->singleton(SeActivityRelRepository::class);
         $this->app->singleton(
-            IdGeneratorRepository::class, 
+            IdGeneratorRepository::class,
             fn() => new IdGeneratorRepository(connection: 'vtiger')
         );
 
@@ -91,8 +95,6 @@ class AppServiceProvider extends ServiceProvider
 
         $this->registerServices();
         $this->registerRepositories();
-        
-
     }
 
     /**
@@ -185,8 +187,16 @@ class AppServiceProvider extends ServiceProvider
             UserRoleAssignmentRepositoryInterface::class,
             UserRoleAssignmentRepository::class
         );
-        
-
+        // RoleProfileAssignmentRepository
+        $this->app->bind(
+            RoleProfileAssignmentRepositoryInterface::class,
+            RoleProfileAssignmentRepository::class
+        );
+        // ProfileRepository
+        $this->app->bind(
+            ProfileRepositoryInterface::class,
+            ProfileRepository::class
+        );
     }
 
     private function registerServices(): void

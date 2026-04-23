@@ -1,29 +1,111 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Application\DTOs\Role\AssignRoleRequest;
+use App\Application\DTOs\Role\CreateRoleRequest;
+use App\Application\DTOs\Role\UpdateRoleRequest;
 use App\Application\UseCases\Role\AssignUserRoleUseCase;
+use App\Application\UseCases\Role\CreateRoleUseCase;
+use App\Application\UseCases\Role\DeleteRoleUseCase;
+use App\Application\UseCases\Role\GetAllRolesUseCase;
 use App\Application\UseCases\Role\GetAvailableRolesUseCase;
+use App\Application\UseCases\Role\UpdateRoleUseCase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use InvalidArgumentException;
+use RuntimeException;
 
 class RoleController extends Controller
 {
     public function __construct(
+        private readonly GetAllRolesUseCase $getAll,
+        private readonly CreateRoleUseCase $create,
+        private readonly UpdateRoleUseCase $update,
+        private readonly DeleteRoleUseCase $delete,
         private readonly GetAvailableRolesUseCase $getRoles,
         private readonly AssignUserRoleUseCase $assignRole
     ) {}
 
+    public function index(): JsonResponse
+    {
+        return response()->json(['data' => $this->getAll->execute()]);
+    }
     /**
      * GET /api/roles
      * Return all available roles
      */
-    public function index(): JsonResponse
+    public function available(): JsonResponse
     {
         $roles = $this->getRoles->execute();
         return response()->json(['data' => array_map(fn($r) => $r->toArray(), $roles)]);
     }
+
+    public function store(Request $request): JsonResponse
+    {
+        $dto = CreateRoleRequest::fromArray($request->validate([
+            'name' => 'required|string|max:100',
+            'parent_id' => 'nullable|string|exists:vtiger.vtiger_role,roleid',
+        ]));
+        $role = $this->create->execute($dto);
+        return response()->json(['data' => $role, 'message' => 'Role created'], 201);
+    }
+
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $dto = UpdateRoleRequest::fromArray($request->validate([
+            'name' => 'nullable|string|max:100',
+            'parent_id' => 'nullable|string|exists:vtiger.vtiger_role,roleid',
+        ]));
+        $role = $this->update->execute($id, $dto);
+        return response()->json(['data' => $role, 'message' => 'Role updated']);
+    }
+
+    /**
+     * DELETE /api/settings/roles/{id}
+     * Delete a hierarchical role with cascade cleanup.
+     * 
+     * Query params:
+     * - force=true: Auto-reassign users to parent role (default: false = error if users exist)
+     */
+    public function destroy(Request $request, string $id, DeleteRoleUseCase $useCase): JsonResponse
+    {
+        // Validar formato de roleid
+        if (!preg_match('/^H\d+$/', $id)) {
+            return response()->json(['error' => 'Invalid role ID format'], 400);
+        }
+
+        $authenticatedUser = $request->attributes->get('auth_user');
+        if (!$authenticatedUser) {
+            return response()->json(['error' => 'User not authenticated'], 401);
+        }
+
+        try {
+            // Leer parámetro force de la query string
+            $force = $request->boolean('force', false);
+
+            $useCase->execute($id, $authenticatedUser->getId(), $force);
+
+            return response()->json([
+                'message' => 'Role deleted successfully',
+                'data' => ['role_id' => $id, 'force' => $force],
+            ], 200);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        } catch (RuntimeException $e) {
+            // Si es por asignaciones existentes, sugerir uso de force
+            if (str_contains($e->getMessage(), 'user(s) assigned')) {
+                return response()->json([
+                    'error' => $e->getMessage(),
+                    'hint' => 'Use ?force=true to auto-reassign users to parent role',
+                ], 409); // Conflict
+            }
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+
 
     /**
      * PUT /api/users/{userId}/role
@@ -47,7 +129,7 @@ class RoleController extends Controller
         try {
             $authId = $request->attributes->get('auth_user')->getId();
             $this->assignRole->execute($dto, $authId);
-            
+
             return response()->json(['message' => 'Role assigned successfully']);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 404);

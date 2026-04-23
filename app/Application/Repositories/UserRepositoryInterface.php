@@ -99,19 +99,12 @@ interface UserRepositoryInterface
     public function updateProfile(UpdateUserProfileRequest $request, int $modifiedByUserId): bool;
 
     /**
-     * Change a user's password.
+     * Change user password with secure hashing.
      * 
-     * Passwords are hashed using bcrypt before storage.
-     * Requires authorization check (user can only change their own password,
-     * unless caller is an administrator).
-     * Creates audit trail entry for security compliance.
-     * 
-     * @param int $userId ID of the user whose password is being changed
-     * @param string $newPassword The new plain-text password (will be hashed)
-     * @param int $modifiedByUserId ID of the authenticated user making the change
-     * @return bool True if password was changed successfully, false otherwise
-     * @throws \InvalidArgumentException If password does not meet security requirements
-     * @throws \DomainException If user does not exist or is inactive
+     * @param int $userId
+     * @param string $newPassword
+     * @param int $modifiedByUserId ID of user performing the change (for audit)
+     * @return bool True if update was successful
      */
     public function changePassword(int $userId, string $newPassword, int $modifiedByUserId): bool;
 
@@ -236,4 +229,16 @@ interface UserRepositoryInterface
      * Get the hierarchical role name for a user
      */
     public function getHierarchicalRoleName(int $userId): ?string;
+
+    
+   
+    
+    /**
+     * Upgrade legacy password hash to modern algorithm.
+     * 
+     * @param int $userId
+     * @param string $plainPassword Plain text password to re-hash
+     * @return bool True if upgrade was successful
+     */
+    public function upgradePasswordHash(int $userId, string $plainPassword): bool;
 }

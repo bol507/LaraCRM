@@ -72,7 +72,14 @@ class GetTasksUseCase
      *     filters: ['status' => ['In Progress'], 'priority' => ['High']]
      * );
      */
-    public function execute(int $userId, int $page = 1, int $limit = 50, array $filters = []): array
+    public function execute(
+        int $userId, 
+        int $page = 1, 
+        int $limit = 50, 
+        array $filters = [],
+        ?int $requestedUserId = null,  
+        array $subordinateIds = []     
+    ): array
     {
         // Validate input parameters
         if ($userId <= 0) {

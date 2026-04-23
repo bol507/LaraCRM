@@ -106,7 +106,9 @@ interface TaskRepositoryInterface
         int $userId,
         int $limit = 50,
         array $filters = [],
-        int $offset = 0
+        int $offset = 0,
+        ?int $requestedUserId = null,      
+        array $subordinateIds = [] 
     ): array;
 
     /**

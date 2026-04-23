@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Domain\Entities\User;
 use App\Infrastructure\Mappers\UserMapper;
+use App\Infrastructure\Services\UserRoleDataService;
 use App\Models\VtigerUser;
 use App\Services\JwtService;
 use Closure;
@@ -45,7 +46,8 @@ class JwtMiddleware
             return response()->json(['error' => 'Usuario no encontrado o inactivo'], 401);
         }
 
-        $domainUser = UserMapper::toDomain($vtigerUser);
+        $roleData = UserRoleDataService::fetchForUser($vtigerUser->id);
+        $domainUser = UserMapper::toDomain($vtigerUser, $roleData);
 
 
         

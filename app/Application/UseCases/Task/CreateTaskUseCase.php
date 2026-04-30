@@ -55,12 +55,7 @@ class CreateTaskUseCase
 
         $this->validateRequest($request);
 
-        Log::debug('CreateTaskUseCase::execute', [
-            'subject' => $request->subject,
-            'userId' => $userId,
-            'activitytype' => 'Task',
-        ]);
-
+        
         $attempt = 0;
 
         while ($attempt < self::MAX_CREATE_RETRIES) {
@@ -207,15 +202,10 @@ class CreateTaskUseCase
                 crmid: $taskId,
                 userId: $userId
             );
-            Log::info('Activity logged for task creation', [
-                'activityId' => $taskId,
-                'module' => 'Calendar',
-            ]);
+            
+                
         } catch (\Exception $e) {
-            Log::error('Failed to log activity', [
-                'activityId' => $taskId,
-                'error' => $e->getMessage(),
-            ]);
+            //
         }
     }
 

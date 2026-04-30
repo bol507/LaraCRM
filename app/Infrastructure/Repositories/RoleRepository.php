@@ -6,6 +6,7 @@ use App\Application\DTOs\Role\RoleOptionResponse;
 use App\Application\Repositories\RoleRepositoryInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class RoleRepository implements RoleRepositoryInterface
@@ -13,8 +14,8 @@ class RoleRepository implements RoleRepositoryInterface
     protected const CONNECTION = 'vtiger';
     protected const ROLE_TABLE = 'vtiger_role';
     protected const USER_ROLE_TABLE = 'vtiger_user2role';
-    protected const PROFILE_ROLE_TABLE = 'vtiger_profile2role';
     protected const CRMENTITY_TABLE = 'vtiger_crmentity';
+    protected const ROLE2PROFILE_TABLE = 'vtiger_role2profile';
 
     /**
      * Fetch all roles ordered by hierarchy depth.
@@ -22,6 +23,11 @@ class RoleRepository implements RoleRepositoryInterface
     public function findAll(): array
     {
         return $this->query()
+            ->leftJoin(self::ROLE2PROFILE_TABLE, 'vtiger_role.roleid', '=', 'vtiger_role2profile.roleid')
+            ->select(
+                'vtiger_role.*',
+                'vtiger_role2profile.profileid as profile_id'
+            )
             ->orderBy('depth', 'asc')
             ->orderBy('rolename', 'asc')
             ->get()
@@ -69,8 +75,12 @@ class RoleRepository implements RoleRepositoryInterface
         $roleData = DB::connection(self::CONNECTION)
             ->table(self::USER_ROLE_TABLE) // vtiger_user2role
             ->join('vtiger_role', self::USER_ROLE_TABLE . '.roleid', '=', 'vtiger_role.roleid')
+            ->join('vtiger_crmentity', function ($join) {
+                $join->on('vtiger_role.roleid', '=', 'vtiger_crmentity.crmid')
+                    ->where('vtiger_crmentity.setype', '=', 'Roles');
+            })
             ->where(self::USER_ROLE_TABLE . '.userid', $userId)
-            //->where('vtiger_role.deleted', 0)
+            ->where(self::CRMENTITY_TABLE . '.deleted', 0)
             ->select(
                 'vtiger_role.roleid',
                 'vtiger_role.rolename',
@@ -100,18 +110,43 @@ class RoleRepository implements RoleRepositoryInterface
      */
     public function findAllAvailable(): array
     {
-        $cacheKey = 'roles_available_list';
-        $ttl = 300; // 5 minutes
+        $results = $this->query()
+        ->leftjoin(self::CRMENTITY_TABLE, function ($join) {
+            $join->on('vtiger_role.roleid', '=', 'vtiger_crmentity.crmid')
+                ->where('vtiger_crmentity.setype', '=', 'Roles')
+                ->where('vtiger_crmentity.deleted', 0);
+        })
+        ->leftJoin(self::ROLE2PROFILE_TABLE, 'vtiger_role.roleid', '=', 'vtiger_role2profile.roleid')
+        ->where(self::CRMENTITY_TABLE . '.deleted', 0)
+        ->select(
+            'vtiger_role.roleid',
+            'vtiger_role.rolename',
+            'vtiger_role.depth',
+            'vtiger_role.parentrole',
+            'vtiger_role2profile.profileid as profile_id'
+        )
+        ->orderBy('vtiger_role.depth', 'asc')
+        ->orderBy('vtiger_role.rolename', 'asc')
+        ->get();
 
-        return Cache::remember($cacheKey, $ttl, function () {
-            return $this->query()
-                ->select('roleid', 'rolename', 'depth', 'parentrole')
-                ->orderBy('depth', 'asc')
-                ->orderBy('rolename', 'asc')
-                ->get()
-                ->map(fn($row) => RoleOptionResponse::fromDbRow($row))
-                ->toArray();
-        });
+        Log::debug('RoleRepository::findAllAvailable', [
+        'count' => $results->count(),
+        'first' => $results->first(),
+        'sql' => $results->toArray(),
+    ]);
+        return $results
+        ->map(fn($row) => RoleOptionResponse::fromDbRow($row))
+        ->toArray();
+    }
+
+    public function getUserRoleId(int $userId): ?string
+    {
+        $result = DB::connection(self::CONNECTION)
+            ->table('vtiger_user2role')
+            ->where('userid', $userId)
+            ->value('roleid');
+
+        return $result ? (string) $result : null;
     }
 
     /**
@@ -159,6 +194,14 @@ class RoleRepository implements RoleRepositoryInterface
         return $updated > 0;
     }
 
+    public function updateName(string $roleId, string $newName): bool
+    {
+        return DB::connection(self::CONNECTION)
+            ->table(self::ROLE_TABLE)
+            ->where('roleid', $roleId)
+            ->update(['rolename' => $newName]);
+    }
+
     /**
      * Hard-delete a role.
      * Note: UseCase layer should guarantee no users/children are assigned before calling this.
@@ -182,11 +225,10 @@ class RoleRepository implements RoleRepositoryInterface
      */
     public function deleteWithCascade(string $roleId, int $authenticatedUserId, bool $force = false): bool
     {
-        // 1. Validar que el rol existe y no es el raíz
+        // 1. Validate that the role exists and is not the root
         $role = DB::connection(self::CONNECTION)
             ->table(self::ROLE_TABLE)
             ->where('roleid', $roleId)
-            //->where('deleted', 0)
             ->first();
 
         if (!$role) {
@@ -197,37 +239,57 @@ class RoleRepository implements RoleRepositoryInterface
             throw new RuntimeException('Cannot delete the root Organization role (H1)');
         }
 
-        // 2. Validar asignaciones (a menos que sea forzado)
+        // 2. Validate assignments (unless forced)
         if (!$force) {
             if ($this->hasUserAssignments($roleId)) {
                 throw new RuntimeException(
                     "Cannot delete role '{$roleId}': {$this->countUserAssignments($roleId)} user(s) assigned. " .
-                    "Reassign users first or use force=true to auto-reassign to parent role."
+                        "Reassign users first or use force=true to auto-reassign to parent role."
                 );
             }
+            // Correction: Use ROLE2PROFILE_TABLE
             if ($this->hasProfileAssignments($roleId)) {
                 throw new RuntimeException(
-                    "Cannot delete role '{$roleId}': profile assignments exist. Remove them first."
+                    "Cannot delete role '{$roleId}': profile assignments exist in vtiger_role2profile. Remove them first."
                 );
             }
         }
 
-        // 3. Ejecutar en transacción atómica
+        // 3. Execute in atomic transaction
         return DB::connection(self::CONNECTION)->transaction(function () use ($roleId, $authenticatedUserId, $force, $role): bool {
             $now = now()->format('Y-m-d H:i:s');
+            $success = true;
 
-            // === FASE A: Reasignar usuarios si force=true ===
+            // Phase A: Reassign users if force=true
             if ($force && $this->hasUserAssignments($roleId)) {
                 $parentRoleId = $this->extractParentRoleId($role->parentrole);
-                
+
                 if ($parentRoleId) {
-                    // Reasignar usuarios al rol padre
-                    DB::connection(self::CONNECTION)
-                        ->table(self::USER_ROLE_TABLE)
-                        ->where('roleid', $roleId)
-                        ->update(['roleid' => $parentRoleId]);
+                    // Validate that parent exists and is not deleted
+                    $parentValid = DB::connection(self::CONNECTION)
+                        ->table(self::ROLE_TABLE)
+                        ->join(self::CRMENTITY_TABLE, function ($join) {
+                            $join->on('vtiger_role.roleid', '=', 'vtiger_crmentity.crmid')
+                                ->where('vtiger_crmentity.setype', '=', 'Roles');
+                        })
+                        ->where('vtiger_role.roleid', $parentRoleId)
+                        ->where('vtiger_crmentity.deleted', 0)
+                        ->exists();
+
+                    if ($parentValid) {
+                        DB::connection(self::CONNECTION)
+                            ->table(self::USER_ROLE_TABLE)
+                            ->where('roleid', $roleId)
+                            ->update(['roleid' => $parentRoleId]);
+                    } else {
+                        // Invalid parent: delete assignments
+                        DB::connection(self::CONNECTION)
+                            ->table(self::USER_ROLE_TABLE)
+                            ->where('roleid', $roleId)
+                            ->delete();
+                    }
                 } else {
-                    // Sin padre: eliminar asignaciones (usuarios quedarán sin rol jerárquico)
+                    // No parent: delete assignments
                     DB::connection(self::CONNECTION)
                         ->table(self::USER_ROLE_TABLE)
                         ->where('roleid', $roleId)
@@ -235,36 +297,32 @@ class RoleRepository implements RoleRepositoryInterface
                 }
             }
 
-            // === FASE B: Eliminar asignaciones de perfiles ===
+            // Phase B: Delete profile assignments
+            // Correction: Use ROLE2PROFILE_TABLE
             DB::connection(self::CONNECTION)
-                ->table(self::PROFILE_ROLE_TABLE)
+                ->table(self::ROLE2PROFILE_TABLE)  // vtiger_role2profile
                 ->where('roleid', $roleId)
                 ->delete();
 
-            // === FASE C: Soft-delete del rol en vtiger_role ===
-            $updated = DB::connection(self::CONNECTION)
+            // Phase C: Hard-delete the role from vtiger_role
+            DB::connection(self::CONNECTION)
                 ->table(self::ROLE_TABLE)
                 ->where('roleid', $roleId)
-                ->update([
-                    //'deleted' => 1,
-                    'date_modified' => $now,
-                    'modified_user_id' => (string) $authenticatedUserId,
-                ]);
+                ->delete();
 
-            // === FASE D: Actualizar crmentity si existe entrada para el rol ===
-            DB::connection(self::CONNECTION)
-                ->table(self::CRMENTITY_TABLE)
-                ->where('crmid', $roleId)
-                ->where('setype', 'Roles')
-                ->update([
-                    'deleted' => 1,
-                    'modifiedtime' => $now,
-                ]);
-
-            // === FASE E: Limpiar caché de permisos de Vtiger ===
+            // Phase D: Clear Vtiger permission cache
             $this->clearVtigerPermissionCache();
 
-            return $updated > 0;
+            // Phase E: Audit logging
+            Log::info('Role deleted with cascade', [
+                'role_id' => $roleId,
+                'role_name' => $role->rolename ?? 'unknown',
+                'deleted_by' => $authenticatedUserId,
+                'force' => $force,
+                'timestamp' => $now,
+            ]);
+
+            return $success;
         });
     }
 
@@ -284,21 +342,42 @@ class RoleRepository implements RoleRepositoryInterface
 
     public function findSubordinateUserIds(string $roleId): array
     {
-        $role = $this->findById($roleId);
-        if (!$role) {
+        if ($roleId === null) {
             return [];
         }
-        return DB::connection('vtiger')
-            ->table('vtiger_user2role AS u2r')
-            ->join('vtiger_users AS u', 'u2r.userid', '=', 'u.id')
-            ->join('vtiger_role AS r', 'u2r.roleid', '=', 'r.roleid')
-            ->where('r.parentrole', 'LIKE', $role['parentrole'] . '%')
-            ->where('r.roleid', '!=', $roleId)  // exclude current role
-            ->pluck('u.id')
+        
+        // 1. Get the full path (parentrole) of the current role
+        $currentRolePath = DB::connection(self::CONNECTION)
+            ->table('vtiger_role')
+            ->where('roleid', $roleId)
+            ->value('parentrole');
+
+        if (!$currentRolePath) {
+            return [];
+        }
+
+        // 2. Find roles whose parentrole starts with the current path + '::'
+        //    This ensures we only get direct/indirect descendants
+        $subordinateRoleIds = DB::connection(self::CONNECTION)
+            ->table('vtiger_role')
+            ->where('parentrole', 'LIKE', $currentRolePath . '::%')  // FIX: '::%' not '%'
+            ->where('roleid', '!=', $roleId)  // Exclude current role
+            ->pluck('roleid');
+
+        if ($subordinateRoleIds->isEmpty()) {
+            return [];
+        }
+
+        // 3. Get users assigned to those subordinate roles
+        return DB::connection(self::CONNECTION)
+            ->table('vtiger_user2role')
+            ->whereIn('roleid', $subordinateRoleIds)
+            ->pluck('userid')
+            ->map(fn($id) => (int) $id)  // Type safety: ensure integers
             ->toArray();
     }
 
-     public function hasUserAssignments(string $roleId): bool
+    public function hasUserAssignments(string $roleId): bool
     {
         return DB::connection(self::CONNECTION)
             ->table(self::USER_ROLE_TABLE)
@@ -309,8 +388,21 @@ class RoleRepository implements RoleRepositoryInterface
     public function hasProfileAssignments(string $roleId): bool
     {
         return DB::connection(self::CONNECTION)
-            ->table(self::PROFILE_ROLE_TABLE)
+            ->table(self::ROLE2PROFILE_TABLE)
             ->where('roleid', $roleId)
+            ->exists();
+    }
+
+    public function existsByName(string $name): bool
+    {
+        return DB::connection(self::CONNECTION)
+            ->table(self::ROLE_TABLE)
+            ->join(self::CRMENTITY_TABLE, function ($join) {
+                $join->on('vtiger_role.roleid', '=', 'vtiger_crmentity.crmid')
+                    ->where('vtiger_crmentity.setype', '=', 'Roles');
+            })
+            ->where('vtiger_role.rolename', $name)
+            ->where('vtiger_crmentity.deleted', 0)
             ->exists();
     }
 
@@ -329,8 +421,8 @@ class RoleRepository implements RoleRepositoryInterface
     private function extractParentRoleId(string $parentRolePath): ?string
     {
         $parts = array_filter(explode('::', trim($parentRolePath, ':')));
-        
-        // El padre directo es el penúltimo elemento
+
+        // The direct parent is the second-to-last element
         return count($parts) >= 2 ? $parts[count($parts) - 2] : null;
     }
 
@@ -357,14 +449,13 @@ class RoleRepository implements RoleRepositoryInterface
             'vtiger_tmp_read_group_permissions',
             'vtiger_tmp_write_group_permissions',
         ];
-        
+
         foreach ($tables as $table) {
             try {
                 DB::connection(self::CONNECTION)->statement("DELETE FROM {$table}");
             } catch (\Exception $e) {
-                // Ignorar si la tabla no existe
+                // Ignore if table doesn't exist
             }
         }
     }
-
 }

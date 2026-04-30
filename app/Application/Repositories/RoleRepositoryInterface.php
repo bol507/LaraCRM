@@ -28,6 +28,23 @@ interface RoleRepositoryInterface
      * @return array<RoleOptionResponse>
      */
     public function findAllAvailable(): array;
+
+    /**
+     * Find all users assigned to a role and its descendants.
+     *
+     * @param string $roleId
+     * @return array
+     */
+    public function findSubordinateUserIds(string $roleId): array;
+
+    /**
+     * Get the role ID for a specific user
+     *
+     * @param integer $userId
+     * @return string|null
+     */
+    public function getUserRoleId(int $userId): ?string;
+
     /**
      * Count how many users are currently assigned to this role.
      */
@@ -42,19 +59,22 @@ interface RoleRepositoryInterface
      * Expected keys: rolename, parentrole, depth, allowassignedrecordsto
      */
     public function update(string $roleId, array $data): bool;
+
+    /**
+     * Update role name.
+     *
+     * @param string $roleId
+     * @param string $newName
+     * @return boolean
+     */
+    public function updateName(string $roleId, string $newName): bool;
     /**
      * Hard-delete a role.
      * Note: UseCase layer should guarantee no users/children are assigned before calling this.
      */
     public function delete(string $roleId): bool;
 
-    /**
-     * Find all users assigned to a role and its descendants.
-     *
-     * @param string $roleId
-     * @return array
-     */
-    public function findSubordinateUserIds(string $roleId): array;
+    
 
     /**
      * Cascade hierarchy path and depth updates to all descendants.
@@ -82,4 +102,6 @@ interface RoleRepositoryInterface
      * Check if a role has profile assignments.
      */
     public function hasProfileAssignments(string $roleId): bool;
+
+    public function existsByName(string $name): bool;
 }

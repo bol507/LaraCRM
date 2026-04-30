@@ -36,22 +36,10 @@ use InvalidArgumentException;
  */
 class GetCommentsByRelatedIdUseCase
 {
-    /**
-     * Comment repository for data access operations
-     * 
-     * @var CommentRepositoryInterface
-     */
-    protected readonly CommentRepositoryInterface $repository;
-
-    /**
-     * Constructor with dependency injection
-     * 
-     * @param CommentRepositoryInterface $repository Repository implementation for comment persistence
-     */
-    public function __construct(CommentRepositoryInterface $repository)
-    {
-        $this->repository = $repository;
-    }
+   
+    public function __construct(
+        private readonly CommentRepositoryInterface $repository
+    ){}
 
     /**
      * Execute the use case: retrieve comments for a related record
@@ -177,7 +165,7 @@ class GetCommentsByRelatedIdUseCase
      * $response = $this->transformForApi($paginator);
      * return response()->json($response);
      */
-    public function transformForApi(LengthAwarePaginator $paginator): array
+    /*public function transformForApi(LengthAwarePaginator $paginator): array
     {
         // Map Comment entities to CommentDto instances
         $dtos = $paginator->getCollection()->map(
@@ -194,5 +182,5 @@ class GetCommentsByRelatedIdUseCase
                 'has_more' => $paginator->hasMorePages(),
             ],
         ];
-    }
+    }*/
 }

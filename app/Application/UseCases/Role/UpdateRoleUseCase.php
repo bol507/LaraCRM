@@ -33,20 +33,36 @@ class UpdateRoleUseCase
         $oldPrefix = $role['parentrole'];
         $oldDepth = (int) $role['depth'];
 
-        if ($request->parentId !== null && $request->parentId !== ($role['parentrole'] ?? '')) {
-            $this->validateParentChange($roleId, $request->parentId, $oldPrefix);
+        // Example: 'H1::H2::H7::H6' -> Parent is 'H7'
+        $pathParts = explode('::', trim($oldPrefix, ':'));
+        $currentParentId = (count($pathParts) > 1) ? $pathParts[count($pathParts) - 2] : null;
+
+        $newParentId = $request->parentId;
+
+        if ($newParentId !== $currentParentId) {
             
-            $newParent = $this->repository->findById($request->parentId);
-            $newDepth = (int) $newParent['depth'] + 1;
-            $newPrefix = rtrim($newParent['parentrole'], ':') . '::' . $roleId . '::';
-            $depthOffset = $newDepth - $oldDepth;
+            if ($newParentId !== null) {
+                // Validate no circular reference
+                $this->validateParentChange($roleId, $newParentId, $oldPrefix);
 
-            // Aplicar cambios al rol actual
-            $updateData['parentrole'] = $newPrefix;
-            $updateData['depth'] = $newDepth;
+                // Calculate new path and depth
+                $newParent = $this->repository->findById($newParentId);
+                $newDepth = (int) $newParent['depth'] + 1;
+                $newPrefix = rtrim($newParent['parentrole'], ':') . '::' . $roleId . '::';
+                $depthOffset = $newDepth - $oldDepth;
 
-            // 🔽 Cascada: actualizar hijos
-            $this->repository->cascadePathUpdate($oldPrefix, $newPrefix, $depthOffset);
+                $updateData['parentrole'] = $newPrefix;
+                $updateData['depth'] = $newDepth;
+
+                // Cascade to children
+                $this->repository->cascadePathUpdate($oldPrefix, $newPrefix, $depthOffset);
+            } else {
+                // Case: Move to Root (H1)
+                $updateData['parentrole'] = 'H1::' . $roleId . '::';
+                $updateData['depth'] = 1;
+                $depthOffset = 1 - $oldDepth;
+                $this->repository->cascadePathUpdate($oldPrefix, $updateData['parentrole'], $depthOffset);
+            }
         }
 
         if ($request->name !== null) {
@@ -57,6 +73,10 @@ class UpdateRoleUseCase
             $updateData['allowassignedrecordsto'] = $request->sharingRule;
         }
 
+        if (!empty($updateData)) {
+            $this->repository->update($roleId, $updateData);
+        }
+
         $updated = $this->repository->findById($roleId);
         return new RoleDto(
             roleid: $updated['roleid'],
@@ -65,7 +85,6 @@ class UpdateRoleUseCase
             depth: (int) $updated['depth'],
             sharing_rule: (int) $updated['allowassignedrecordsto']
         );
-
     }
 
     /**
@@ -77,13 +96,13 @@ class UpdateRoleUseCase
             throw new InvalidArgumentException('A role cannot be its own parent');
         }
 
-        // Si el nuevo padre ya está en la ruta actual del rol, es un ciclo
+        // If the new parent is already in the current role's path, it's a cycle
         $pathParts = explode('::', trim($currentPath, ':'));
         if (in_array($newParentId, $pathParts, true)) {
             throw new InvalidArgumentException('Circular hierarchy detected: cannot assign a descendant as parent');
         }
 
-        // Verificar que el nuevo padre existe
+        // Verify that the new parent exists
         if (!$this->repository->findById($newParentId)) {
             throw new InvalidArgumentException("Parent role '{$newParentId}' does not exist");
         }

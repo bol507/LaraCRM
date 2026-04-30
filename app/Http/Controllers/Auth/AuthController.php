@@ -8,8 +8,10 @@ use App\Application\DTOs\Auth\ResetPasswordRequest;
 use App\Application\UseCases\Auth\LoginUseCase;
 use App\Application\UseCases\Auth\RequestPasswordResetUseCase;
 use App\Application\UseCases\Auth\ResetPasswordUseCase;
+use App\Application\UseCases\Profile\GetUserProfileUseCase;
 use App\Application\UseCases\Role\GetUserRoleUseCase;
 use App\Http\Controllers\Controller;
+use App\Infrastructure\Services\ProfilePermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +25,9 @@ class AuthController extends Controller
         private readonly LoginUseCase $loginUseCase,
         private readonly RequestPasswordResetUseCase $requestResetUseCase,
         private readonly ResetPasswordUseCase $resetPasswordUseCase,
-        private readonly GetUserRoleUseCase $getUserRoleUseCase
+        private readonly GetUserRoleUseCase $getUserRoleUseCase,
+        private readonly GetUserProfileUseCase $getUserProfileUseCase,
+        private readonly ProfilePermissionService $profilePermissionService,
     ) {}
 
     /**
@@ -156,13 +160,7 @@ class AuthController extends Controller
         $authenticatedUser = $request->attributes->get('auth_user');
         $userId = $authenticatedUser?->getId() ?? 'unknown';
 
-        Log::info('User logged out', [
-            'user_id' => $userId,
-            'ip' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'timestamp' => now()->toISOString(),
-        ]);
-
+        
         return response()->json([
             'message' => 'Session closed successfully',
             'data' => ['user_id' => $userId],
@@ -175,16 +173,27 @@ class AuthController extends Controller
      */
     public function me(Request $request): JsonResponse
     {
-        /** @var User|null $authenticatedUser */
         $authenticatedUser = $request->attributes->get('auth_user');
 
         if (!$authenticatedUser) {
             return response()->json(['error' => 'Unauthenticated user'], 401);
         }
 
-        // Fetch dynamic hierarchical role (no hardcoding)
+        // 1. Fetch hierarchical role data (already implemented)
         $roleData = $this->getUserRoleUseCase->execute($authenticatedUser->getId());
 
+        // 2. Get profile_id assigned to the user's role
+        $profileId = $this->getUserProfileUseCase->execute($authenticatedUser->getId());
+
+        // 3. Resolve module permissions (only if not admin)
+        $permissionsByTabid = [];
+        if ($profileId && !$authenticatedUser->isAdmin()) {
+            $permissionsByTabid = $this->profilePermissionService->getAllForProfile($profileId);
+        }
+        
+        // 4. Active modules (so frontend can map tabid → its internal key)
+        $modulesWithPerms = $this->profilePermissionService->getModulesWithPermissions($profileId);
+        
         return response()->json([
             'data' => [
                 // Identity
@@ -195,7 +204,7 @@ class AuthController extends Controller
                 'full_name' => $authenticatedUser->getFullName(),
                 'email' => $authenticatedUser->getEmail(),
 
-                // New role architecture (source of truth)
+                // New Role Architecture (source of truth)
                 'is_admin' => $authenticatedUser->getIsAdmin(),
                 'role_id' => $roleData['role_id'] ?? null,
                 'rolename' => $roleData['rolename'] ?? null,
@@ -203,14 +212,19 @@ class AuthController extends Controller
                 'role_parent' => $roleData['parentrole'] ?? null,
                 'sharing_rule' => $roleData['sharing_rule'] ?? 1,
 
-                // Profile and status
+                // New: Profile & Permissions
+                'profile_id' => $profileId,
+                'permissions' => array_column($modulesWithPerms, 'permissions', 'tabid'),  // Key: tabid (int)
+                'available_modules' => $modulesWithPerms, // For frontend to map
+
+                // Profile & Status
                 'status' => $authenticatedUser->getStatus(),
                 'department' => $authenticatedUser->getDepartment(),
                 'phone_crm' => $authenticatedUser->getPhoneCrm(),
                 'reports_to_id' => $authenticatedUser->getReportsToId(),
                 'is_active' => $authenticatedUser->isActive(),
 
-                // Legacy: only for compatibility with old frontend
+                // Legacy (backward compatibility only)
                 'role' => $authenticatedUser->getRole(),
             ]
         ], 200);

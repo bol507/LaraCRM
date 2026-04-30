@@ -6,7 +6,6 @@ use App\Application\DTOs\Comment\CreateCommentRequest;
 use App\Application\UseCases\Core\Entity\CreateEntityUseCase;
 use App\Domain\Entities\Comment;
 use App\Infrastructure\Repositories\CommentRepository;
-use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
 use Illuminate\Support\Facades\DB;
@@ -14,32 +13,26 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
+/**
+ * Use case for creating a new comment
+ */
 class CreateCommentUseCase
 {
-    private const ID_LOCK_NAME = 'comment_id_generation';
-
-    private const ENTITY_SETYPE = 'ModComments';
+    
+    private const ENTITY_SETYPE = 'Calendar';
 
     public function __construct(
-        private readonly IdGeneratorRepository $idGenerator,
         private readonly CreateEntityUseCase $createEntity,
         private readonly CommentRepository $comment,
     ) {}
 
     /**
-     * Execute the create comment use case
+     * Execute the creation comment use case
      *
-     * Orquestación de DML:
-     * 1. Generar ID único
-     * 2. Insertar vtiger_crmentity (metadata)
-     * 3. Insertar vtiger_modcomments (datos del comentario)
-     *
-     * @param  CreateCommentRequest  $request  Validated request data
-     * @return Comment The newly created comment entity
-     *
-     * @throws ValidationException If validation fails
-     * @throws InvalidArgumentException If business rules are violated
-     * @throws \RuntimeException If persistence fails
+     * @param CreateCommentRequest $request
+     * @return Comment
+     * @throws ValidationException
+     * @throws \Throwable
      */
     public function execute(CreateCommentRequest $request): Comment
     {
@@ -48,32 +41,22 @@ class CreateCommentUseCase
         $userId = $request->userId ?? CurrentUserService::idOr(1);
         $now = now()->format('Y-m-d H:i:s');
 
-        // Generar ID y crear comentario en transacción
-        $commentId = $this->idGenerator->generateNextId(
-            table: 'vtiger_modcomments',
-            column: 'modcommentsid',
-            lockName: self::ID_LOCK_NAME
-        );
-
-        // Insertar en transacción
-        $comment = DB::connection('vtiger')->transaction(function () use ($request, $userId, $commentId, $now) {
-            // 1. Insertar vtiger_crmentity using generic use case
-            $this->createEntity->execute(
-                data: [
-                    'label' => substr(trim($request->content), 0, 100),
-                    'description' => substr($request->content, 0, 100),
+        $entity = DB::connection('vtiger')->transaction(function () use ($request, $userId, $now) {
+            // 1. Create vtiger_crmentity via generic UseCase → returns crmid
+            $commentId = $this->createEntity->execute(
+                [
+                    'label' => $this->generateLabel($request->content),
+                    'description' => $this->generateDescription($request->content),
                     'smownerid' => $userId,
                     'smcreatorid' => $userId,
-                    'createdtime' => $now,
-                    'modifiedtime' => $now,
+                    // createdtime/modifiedtime are handled internally by CreateEntityUseCase
                 ],
                 setype: self::ENTITY_SETYPE,
-                table: 'vtiger_crmentity',
-                userId: $userId,
-                crmId: $commentId
+                userId: $userId
+            // crmId: null → let it be generated automatically
             );
 
-            // 2. Insertar vtiger_modcomments
+            // 2. Create vtiger_modcomments with the generated ID
             $this->comment->insert([
                 'modcommentsid' => $commentId,
                 'commentcontent' => $request->content,
@@ -81,43 +64,27 @@ class CreateCommentUseCase
                 'parent_comments' => $request->parentCommentId,
                 'userid' => $userId,
                 'is_private' => $request->isPrivate ? '1' : '0',
+                'filename' => $request->attachment,
+                'createdtime' => $now,      // If your table requires it
+                'modifiedtime' => $now,
             ]);
 
-            // 3. Buscar datos del usuario para crear la entidad
-            $user = DB::connection('vtiger')
-                ->table('vtiger_users')
-                ->where('id', $userId)
-                ->first();
-
-            $userName = $user ? trim("{$user->first_name} {$user->last_name}") : 'Usuario';
-            $userEmail = $user->email1 ?? '';
-
-            // Retornar datos para crear entidad
-            return [
-                'modcommentsid' => $commentId,
-                'related_to' => $request->relatedId,
-                'commentcontent' => $request->content,
-                'userid' => $userId,
-                'parent_comments' => $request->parentCommentId,
-                'is_private' => $request->isPrivate ? '1' : '0',
-                'assigned_user_name' => $userName,
-                'assigned_user_email' => $userEmail,
-            ];
+            return new Comment(
+                commentid: $commentId,
+                commentcontent: $request->content,
+                related_to: $request->relatedId,
+                parent_comments: $request->parentCommentId,
+                customer: null,              // Not used in creation
+                userid: $userId,
+                reasontoedit: null,
+                is_private: $request->isPrivate ? 1 : 0,
+                filename: $request->attachment,
+                related_email_id: null,
+            );
         });
 
-        // Crear entidad del dominio
-        $entity = new Comment(
-            commentid: $commentId,
-            commentcontent: $request->content,
-            related_to: $request->relatedId,
-            parent_comments: $request->parentCommentId,
-            userid: $userId,
-            is_private: $request->isPrivate ? 1 : 0,
-            createdtime: $now,
-        );
-
-        // Registrar actividad
-        $this->logActivity($commentId, $userId);
+        // Register activity
+        $this->logActivity($entity->getId(), $userId);
 
         return $entity;
     }
@@ -145,8 +112,8 @@ class CreateCommentUseCase
         $allowedModules = ['Project', 'Quotes', 'Calendar', 'Accounts', 'Contacts', 'HelpDesk'];
         if (! in_array($request->module, $allowedModules, true)) {
             throw new InvalidArgumentException(
-                "Module '{$request->module}' not allowed for comments. ".
-                'Valid modules: '.implode(', ', $allowedModules)
+                "Module '{$request->module}' not allowed for comments. " .
+                'Valid modules: ' . implode(', ', $allowedModules)
             );
         }
 
@@ -163,6 +130,32 @@ class CreateCommentUseCase
         }
     }
 
+    /**
+     * Generate a label for the comment entity
+     *
+     * @param string $content The comment content
+     * @return string Truncated label (max 255 characters)
+     */
+    private function generateLabel(string $content): string
+    {
+        $label = trim($content);
+        if (strlen($label) > 255) {
+            $label = substr($label, 0, 252) . '...';
+        }
+        return $label ?: 'Comment';
+    }
+
+    /**
+     * Generate a description from the comment content
+     *
+     * @param string $content The comment content
+     * @return string
+     */
+    private function generateDescription(string $content): string
+    {
+        return trim($content);
+    }
+
     private function logActivity(int $commentId, int $userId): void
     {
         try {
@@ -172,10 +165,7 @@ class CreateCommentUseCase
                 userId: $userId
             );
         } catch (\Exception $e) {
-            Log::error('Failed to log activity for comment creation', [
-                'commentId' => $commentId,
-                'error' => $e->getMessage(),
-            ]);
+            // Silently fail - activity logging is non-critical
         }
     }
 }

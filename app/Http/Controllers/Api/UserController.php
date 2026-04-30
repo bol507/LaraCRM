@@ -236,13 +236,13 @@ class UserController extends Controller
         }
 
         $userId = (int) $id;
-        $email = $request->input('email');
+        /*$email = $request->input('email');
         $genericEmails = [
             'info@canalwoods.com',
             'noreply@canalwoods.com',
             'admin@canalwoods.com',
         ];
-        $isGeneric = $email && in_array(strtolower(trim($email)), $genericEmails);
+        $isGeneric = $email && in_array(strtolower(trim($email)), $genericEmails);*/
 
         $validator = Validator::make($request->all(), [
             'user_name' => [
@@ -254,19 +254,9 @@ class UserController extends Controller
             ],
             'first_name' => 'nullable|string|max:30',
             'last_name'  => 'nullable|string|max:30',
-            'email' => $isGeneric
-                ? ['nullable', 'email', 'max:100']
-                : [
-                    'nullable',
-                    'email',
-                    'max:100',
-                    Rule::unique('vtiger.vtiger_users', 'email1')
-                        ->ignore($userId, 'id')->where('deleted', 0)
-                ],
-
-            'is_admin' => 'nullable|boolean',
+            'email' => ['nullable', 'email', 'max:100'],
             'role_id'  => 'nullable|string|exists:vtiger.vtiger_role,roleid',
-
+            'is_admin' => 'nullable|boolean',
             'status'     => 'nullable|in:Active,Inactive,Pending',
             'phone_crm'  => 'nullable|string|max:50',
             'department' => 'nullable|string|max:50',

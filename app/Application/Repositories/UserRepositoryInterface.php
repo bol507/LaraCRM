@@ -93,6 +93,16 @@ interface UserRepositoryInterface
     public function insert(CreateUserRequest $request, int $authenticatedUserId): User;
 
     /**
+     * Update an existing user with data without password
+     *
+     * @param integer $userId
+     * @param array $data
+     * @param integer $modifiedByUserId
+     * @return boolean
+     */
+    public function update(int $userId, array $data, int $modifiedByUserId): bool;
+
+    /**
      * Update an existing user's profile information.
      *
      * Updates: first_name, last_name, email, username, department, phone.

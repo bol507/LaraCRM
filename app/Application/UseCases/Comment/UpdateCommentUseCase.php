@@ -6,7 +6,6 @@ use App\Infrastructure\Repositories\CommentRepository;
 use App\Services\VtigerActivityTracker;
 use DomainException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -19,9 +18,9 @@ class UpdateCommentUseCase
     /**
      * Execute the update comment use case
      *
-     * Orquestación de DML:
-     * 1. Validar que el comentario existe y el usuario tiene permisos
-     * 2. Actualizar vtiger_modcomments (content + reasontoedit)
+     * DML orchestration:
+     * 1. Validate that the comment exists and the user has permissions
+     * 2. Update vtiger_modcomments (content + reason to edit)
      *
      * @param  int  $commentId  Unique identifier of the comment to update
      * @param  int  $authenticatedUserId  ID of the user attempting the update
@@ -43,7 +42,7 @@ class UpdateCommentUseCase
         ?string $module = null,
         ?int $relatedId = null
     ): bool {
-        // Validar contenido
+        // Validate content
         if (trim($content) === '') {
             throw new InvalidArgumentException('Comment content cannot be empty');
         }
@@ -52,32 +51,34 @@ class UpdateCommentUseCase
             throw new InvalidArgumentException('Comment exceeds maximum allowed length');
         }
 
-        // Validar que el comentario existe
+        // Validate that the comment exists
         $existingComment = $this->comment->findById($commentId);
         if (! $existingComment) {
             throw new InvalidArgumentException('Comment not found');
         }
 
-        // Validar que el usuario es el autor
-        if ((int) $existingComment['userid'] !== $authenticatedUserId) {
+        // Validate that the user is the author
+        $authorId = (int) ($existingComment->userid ?? 0);
+        if ($authorId !== $authenticatedUserId) {
             throw new DomainException('Only the author can edit this comment');
         }
 
-        // Actualizar en transacción
-        DB::connection('vtiger')->transaction(function () use ($commentId, $content, $reasonToEdit) {
-            // 1. Actualizar vtiger_modcomments
-            $this->comment->updateComment($commentId, [
+        // Update in transaction
+        $success = DB::connection('vtiger')->transaction(function () use ($commentId, $content, $reasonToEdit) {
+            // 1. Update vtiger_modcomments
+            $succcess =$this->comment->updateComment($commentId, [
                 'commentcontent' => $content,
                 'reasontoedit' => $reasonToEdit,
             ]);
+            return $succcess;
         });
 
-        // Log actividad si se proporcionó
+        // Log activity if module and relatedId are provided
         if ($module && $relatedId) {
             $this->logActivity($commentId, $authenticatedUserId, $module, $relatedId, $reasonToEdit);
         }
 
-        return true;
+        return $success;
     }
 
     private function logActivity(
@@ -93,19 +94,8 @@ class UpdateCommentUseCase
                 crmid: $relatedId,
                 userId: $userId
             );
-
-            Log::info('Comment edited', [
-                'comment_id' => $commentId,
-                'module' => $module,
-                'related_id' => $relatedId,
-                'user_id' => $userId,
-                'reason' => $reason,
-                'timestamp' => now()->toDateTimeString(),
-            ]);
         } catch (\Exception $e) {
-            Log::error('Failed to log comment edit activity: '.$e->getMessage(), [
-                'comment_id' => $commentId,
-            ]);
+            // Silently fail - activity logging is non-critical
         }
     }
 }

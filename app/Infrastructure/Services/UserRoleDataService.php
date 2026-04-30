@@ -56,7 +56,7 @@ class UserRoleDataService
             ->join('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
             ->where('vtiger_user2role.userid', $userId)
             ->select(
-                'vtiger_role.roleid',
+                'vtiger_user2role.roleid as role_id',
                 'vtiger_role.rolename',
                 'vtiger_role.depth',
                 'vtiger_role.parentrole',
@@ -65,7 +65,7 @@ class UserRoleDataService
             ->first();
 
         return [
-            'role_id' => $roleData?->roleid ?? null,
+            'role_id' => $roleData?->role_id ?? null,
             'rolename' => $roleData?->rolename ?? null,
             'depth' => (int) ($roleData?->depth ?? 0),
             'parentrole' => $roleData?->parentrole ?? null,

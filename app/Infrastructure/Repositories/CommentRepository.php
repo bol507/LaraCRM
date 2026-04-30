@@ -20,9 +20,10 @@ use RuntimeException;
  */
 class CommentRepository implements CommentRepositoryInterface
 {
-    private const TABLE = 'vtiger_modcomments';
-
-    private const CONNECTION = 'vtiger';
+    protected const CONNECTION = 'vtiger';
+    protected const TABLE_MODCOMMENTS = 'vtiger_modcomments';
+    protected const TABLE_CRMENTITY = 'vtiger_crmentity';
+    protected const TABLE_USERS = 'vtiger_users';
 
     // =========================================================================
     // Simple CRUD Methods (used by Create/Update UseCases)
@@ -38,7 +39,7 @@ class CommentRepository implements CommentRepositoryInterface
         }
 
         DB::connection(self::CONNECTION)
-            ->table(self::TABLE)
+            ->table(self::TABLE_MODCOMMENTS)
             ->insert($this->prepareData($data));
 
         return $commentId;
@@ -63,7 +64,7 @@ class CommentRepository implements CommentRepositoryInterface
         }
 
         $affected = DB::connection(self::CONNECTION)
-            ->table(self::TABLE)
+            ->table(self::TABLE_MODCOMMENTS)
             ->where('modcommentsid', $commentId)
             ->update($sanitized);
 
@@ -77,7 +78,7 @@ class CommentRepository implements CommentRepositoryInterface
         }
 
         $row = DB::connection(self::CONNECTION)
-            ->table(self::TABLE)
+            ->table(self::TABLE_MODCOMMENTS)
             ->where('modcommentsid', $commentId)
             ->first();
 
@@ -91,7 +92,7 @@ class CommentRepository implements CommentRepositoryInterface
         }
 
         return DB::connection(self::CONNECTION)
-            ->table(self::TABLE)
+            ->table(self::TABLE_MODCOMMENTS)
             ->where('modcommentsid', $commentId)
             ->exists();
     }
@@ -99,7 +100,7 @@ class CommentRepository implements CommentRepositoryInterface
     public function getNextCommentId(): int
     {
         $maxId = DB::connection(self::CONNECTION)
-            ->table(self::TABLE)
+            ->table(self::TABLE_MODCOMMENTS)
             ->max('modcommentsid');
 
         return $maxId ? $maxId + 1 : 1;
@@ -151,24 +152,8 @@ class CommentRepository implements CommentRepositoryInterface
             ->orderBy('vtiger_crmentity.createdtime', 'desc')
             ->get();
 
-        $comments = $items->map(function ($row) {
-            return new Comment(
-                commentid: (int) $row->modcommentsid,
-                commentcontent: (string) $row->commentcontent,
-                related_to: (int) $row->related_to,
-                parent_comments: $row->parent_comments ? (int) $row->parent_comments : null,
-                userid: (int) $row->userid,
-                createdtime: $row->createdtime,
-                modifiedtime: $row->modifiedtime,
-                is_private: $row->is_private === '1' ? 1 : 0,
-                assigned_user_name: $row->user_name ?? null,
-                assigned_user_email: $row->user_email ?? null,
-                userName: $row->user_name ?? null,
-            );
-        });
-
         return new LengthAwarePaginator(
-            $comments,
+            $items,
             $total,
             $perPage,
             $page,
@@ -179,20 +164,21 @@ class CommentRepository implements CommentRepositoryInterface
     /**
      * {@inheritDoc}
      */
-    public function findById(int $commentId): ?Comment
+    public function findById(int $commentId): ?object  
     {
         if ($commentId <= 0) {
             throw new \InvalidArgumentException('commentId must be positive');
         }
 
-        $row = DB::connection('vtiger')
-            ->table('vtiger_modcomments')
-            ->join('vtiger_crmentity', 'vtiger_modcomments.modcommentsid', '=', 'vtiger_crmentity.crmid')
-            ->leftJoin('vtiger_users', 'vtiger_modcomments.userid', '=', 'vtiger_users.id')
+        $row = DB::connection(self::CONNECTION)
+            ->table(self::TABLE_MODCOMMENTS)
+            ->join(self::TABLE_CRMENTITY, 'vtiger_modcomments.modcommentsid', '=', 'vtiger_crmentity.crmid')
+            ->leftJoin(self::TABLE_USERS, 'vtiger_modcomments.userid', '=', 'vtiger_users.id')
             ->leftJoin('vtiger_crmentity as related_entity', 'vtiger_modcomments.related_to', '=', 'related_entity.crmid')
             ->where('vtiger_modcomments.modcommentsid', $commentId)
             ->where('vtiger_crmentity.deleted', 0)
             ->select(
+                // Fields from vtiger_modcomments
                 'vtiger_modcomments.modcommentsid',
                 'vtiger_modcomments.related_to',
                 'vtiger_modcomments.commentcontent',
@@ -203,23 +189,62 @@ class CommentRepository implements CommentRepositoryInterface
                 'vtiger_modcomments.is_private',
                 'vtiger_modcomments.filename',
                 'vtiger_modcomments.related_email_id',
+
+                // Fields from vtiger_crmentity
                 'vtiger_crmentity.createdtime',
                 'vtiger_crmentity.modifiedtime',
                 'vtiger_crmentity.label',
+                'vtiger_crmentity.smcreatorid',
+                'vtiger_crmentity.smownerid',
+
+                // Field from related_entity
                 'related_entity.setype as related_module',
-                DB::raw("CONCAT(vtiger_users.first_name, ' ', vtiger_users.last_name) as assigned_user_name"),
-                DB::raw('vtiger_users.email1 as assigned_user_email')
+
+                // Replace DB::raw with direct selects + concatenation in PHP
+                'vtiger_users.first_name',
+                'vtiger_users.last_name',
+                'vtiger_users.email1 as user_email',  // Consistent alias
             )
             ->first();
+
         if (!$row) {
             return null;
         }
 
-        $rowData = (array) $row;
-        $rowData['relatedModule'] = $row->related_module ?? null;
+        // Concatenate name in PHP (more portable and testable)
+        $row->user_name = trim("{$row->first_name} {$row->last_name}") ?: null;
 
-        // Map to entity if found, otherwise return null
-        return CommentMapper::fromDatabase($rowData);
+        return $row;  // stdClass with all fields
+    }
+
+    /**
+     * Find a comment including soft-deleted ones
+     */
+    public function findByIdIncludingDeleted(int $commentId): ?Comment
+    {
+        $row = DB::connection(self::CONNECTION)
+            ->table(self::TABLE_MODCOMMENTS)
+            ->where('crmid', $commentId)
+            ->first();
+
+        return $row ? CommentMapper::fromDatabaseRow($row) : null;
+    }
+
+    /**
+     * Restore a soft-deleted comment
+     */
+    public function restore(int $commentId): bool
+    {
+        $affected = DB::connection(self::CONNECTION)
+            ->table(self::TABLE_MODCOMMENTS)
+            ->where('crmid', $commentId)
+            ->where('deleted', 1) // Only restore if soft-deleted
+            ->update([
+                'deleted' => 0,
+                'modifiedtime' => now()->format('Y-m-d H:i:s'),
+            ]);
+
+        return $affected > 0;
     }
 
     /**
@@ -264,6 +289,25 @@ class CommentRepository implements CommentRepositoryInterface
             ->update(['deleted' => 1, 'modifiedtime' => now()->format('Y-m-d H:i:s')]);
 
         return $updated > 0;
+    }
+
+    /**
+     * Permanently delete soft-deleted comments older than retention period
+     */
+    public function deletePermanently(int $olderThanDays): int
+    {
+        if ($olderThanDays < 0) {
+            throw new InvalidArgumentException('Retention days must be non-negative');
+        }
+
+        $cutoffDate = now()->subDays($olderThanDays)->format('Y-m-d H:i:s');
+
+        // Only delete records that are already soft-deleted AND old
+        return DB::connection(self::CONNECTION)
+            ->table(self::TABLE_MODCOMMENTS)
+            ->where('deleted', 1)
+            ->where('modifiedtime', '<', $cutoffDate)
+            ->delete();
     }
 
     /**

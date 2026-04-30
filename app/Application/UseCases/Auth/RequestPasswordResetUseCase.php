@@ -47,14 +47,9 @@ class RequestPasswordResetUseCase
             
             $emailSent = true;
             
-            Log::info('Password reset requested', [
-                'email' => $email,
-                'user_id' => $user->getId(),
-            ]);
+            
         } else {
-            Log::info('Password reset requested for unknown/inactive email', [
-                'email' => $email,
-            ]);
+            
         }
         
         return [

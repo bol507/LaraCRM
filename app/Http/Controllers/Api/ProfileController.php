@@ -7,10 +7,14 @@ use App\Application\DTOs\Profile\CreateProfileRequest;
 use App\Http\Controllers\Controller;
 use App\Application\UseCases\Profile\UpdateProfileUseCase;
 use App\Application\DTOs\Profile\UpdateProfilePermissionsRequest;
+use App\Application\Repositories\ModuleRepositoryInterface;
 use App\Application\Repositories\ProfileRepositoryInterface;
 use App\Application\UseCases\Profile\CreateProfileUseCase;
+use App\Infrastructure\Services\ProfilePermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -20,6 +24,8 @@ class ProfileController extends Controller
         private readonly ProfileRepositoryInterface $repository,
         private readonly UpdateProfileUseCase $updateUseCase,
         private readonly CreateProfileUseCase $createUseCase,
+        private readonly ProfilePermissionService $permService,
+        private readonly ModuleRepositoryInterface $moduleRepo
     ) {}
 
     /**
@@ -45,30 +51,20 @@ class ProfileController extends Controller
      * POST /api/settings/profiles
      * Create a new permission profile.
      */
-    public function store(Request $request ): JsonResponse
+    public function store(Request $request): JsonResponse
     {
         try {
-            // HTTP validation (input layer)
             $validated = $request->validate([
-                'name' => 'required|string|max:100',
-                'description' => 'nullable|string|max:255',
-                'modules' => 'nullable|array',
-                'modules.*.tabid' => 'required|integer|min:1',
-                'modules.*.permissions' => 'required|array',
-                'modules.*.permissions.*' => 'in:read,write,create,delete',
-            ], [
-                'modules.*.permissions.*.in' => 'Invalid permission. Allowed: read, write, create, delete',
+                'name'    => 'required|string|max:100|unique:vtiger.vtiger_profile,profilename',
+                'role_id' => 'nullable|string|exists:vtiger.vtiger_role,roleid',
             ]);
 
-            // DTO with domain validation
-            $dto = CreateProfileRequest::fromArray($validated);
-
-            // Execute use case
-            $created = $this->createUseCase->execute($dto);
+            $profile = $this->repository->create($validated['name'], $validated['role_id'] ?? null);
+            Cache::forget('settings:profiles_list');
 
             return response()->json([
-                'message' => 'Profile created successfully',
-                'data' => $created,
+                'data' => $profile,
+                'message' => 'Profile created successfully'
             ], 201);
         } catch (InvalidArgumentException $e) {
             // Domain validation failed → 400
@@ -117,5 +113,70 @@ class ProfileController extends Controller
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 404);
         }
+    }
+
+    // TODO: Create use case
+    public function checkName(Request $request): JsonResponse
+    {
+        $name = $request->query('name');
+        $excludeId = $request->query('exclude_id');
+
+
+        if (!$name || trim($name) === '') {
+            return response()->json(['error' => 'Name parameter is required'], 400);
+        }
+
+        if (strlen($name) > 100) {
+            return response()->json(['error' => 'Name too long (max 100 characters)'], 400);
+        }
+
+
+        $query = DB::connection('vtiger')
+            ->table('vtiger_profile')
+            ->join('vtiger_crmentity', function ($join) {
+                $join->on('vtiger_profile.profileid', '=', 'vtiger_crmentity.crmid')
+                    ->where('vtiger_crmentity.setype', '=', 'Profiles');
+            })
+            ->where('vtiger_profile.profilename', $name)
+            ->where('vtiger_crmentity.deleted', 0);
+
+        // exclude current profile if provided
+        if ($excludeId && is_numeric($excludeId)) {
+            $query->where('vtiger_profile.profileid', '!=', (int) $excludeId);
+        }
+
+        $exists = $query->exists();
+
+        return response()->json(['available' => !$exists]);
+    }
+
+    public function getPermissions(string $profileId): JsonResponse
+    {
+        $modules = $this->moduleRepo->getAllActive();
+        $rawPerms = $this->permService->getRawPermissionsForProfile((int) $profileId);
+
+        $result = array_map(function ($module) use ($rawPerms) {
+            $tabid = $module['tabid'] ?? null;
+            if ($tabid === null) {
+                return null;
+            }
+
+            $perms = $rawPerms[$tabid] ?? [];
+            $actions = array_filter(
+                ['read', 'write', 'create', 'delete'],
+                fn($a) => $perms[$a] ?? false
+            );
+
+            return [
+                'tabid' => $tabid,
+                'name' => $module['name'] ?? 'Unknown',
+                'permissions' => array_values($actions),
+            ];
+        }, $modules); 
+
+        
+        $result = array_filter($result, fn($r) => $r !== null);
+
+        return response()->json(['data' => ['modules' => array_values($result)]]);
     }
 }

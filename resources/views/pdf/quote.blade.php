@@ -262,7 +262,7 @@
                     <td class="name">
                         <strong>{{ $description }}</strong>
                         @if($comment)
-                        <br><span class="small">{{ $comment }}</span>
+                        <br><span class="small">{!! nl2br(e($comment)) !!}</span>
                         @endif
                     </td>
                     <td class="price">${{ number_format($listprice, 2, '.', ',') }}</td>

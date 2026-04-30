@@ -8,6 +8,7 @@ class RoleOptionResponse
         public readonly string $label,      // rolename
         public readonly int $depth,
         public readonly string $parentRole, // ej: "H1::H2::"
+        public readonly ?string $profile_id = null,
     ) {}
 
     public function toArray(): array
@@ -17,6 +18,7 @@ class RoleOptionResponse
             'label' => $this->label,
             'depth' => $this->depth,
             'parent_role' => $this->parentRole,
+            'profile_id' => $this->profile_id,
         ];
     }
 
@@ -28,6 +30,7 @@ class RoleOptionResponse
             label: $row->rolename,
             depth: (int) $row->depth,
             parentRole: $row->parentrole ?? '',
+            profile_id: $row->profile_id !== null ? (string) $row->profile_id : null,
         );
     }
 }

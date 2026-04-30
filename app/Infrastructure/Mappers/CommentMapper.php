@@ -3,7 +3,7 @@
 namespace App\Infrastructure\Mappers;
 
 use App\Domain\Entities\Comment;
-use App\Helpers\TimeHelper;
+use Illuminate\Support\Collection;
 
 /**
  * Comment Mapper
@@ -25,7 +25,7 @@ class CommentMapper
      * @param array $row Database row with specific keys
      * @return Comment Mapped domain entity
      */
-    public static function fromDatabase(array $row): Comment
+    public static function fromDatabaseRow(object $row): Comment
     {
         return new Comment(
             commentid: (int) ($row['modcommentsid'] ?? $row['commentid'] ?? $row['id'] ?? 0),
@@ -38,50 +38,58 @@ class CommentMapper
             is_private: isset($row['is_private']) ? (int) $row['is_private'] : 0,
             filename: $row['filename'] ?? $row['attachment'] ?? null,
             related_email_id: isset($row['related_email_id']) ? (int) $row['related_email_id'] : null,
-            createdtime: $row['createdtime'] ??  null,
-            modifiedtime: $row['modifiedtime'] ??  null,
-            assigned_user_name: $row['assigned_user_name'] ?? $row['userName'] ?? null,
-            assigned_user_email: $row['assigned_user_email'] ?? $row['userEmail'] ?? null,
-            relatedModule: $row['relatedModule'] ?? $row['related_module'] ?? null,
         );
     }
 
-    /**
-     * Map Comment entity to array for API response
-     * 
-     * Converts domain names (Comment) to frontend names (API JSON)
-     * 
-     * @param Comment $comment Domain entity
-     * @return array Serializable data for JSON response
-     */
-    public static function toApi(Comment $comment): array
+    public static function fromDatabaseRows(Collection|array $rows): array
+    {
+         $items = $rows instanceof Collection ? $rows->all() : $rows;
+        return array_map(fn(object $row) => self::fromDatabaseRow($row), $items);
+    }
+
+    public static function toDatabaseRow(Comment $comment): array 
     {
         return [
-            'id' => $comment->getId(),
-            'taskId' => $comment->getRelatedTo(),
-            'content' => $comment->getContent(),
-            'userName' => $comment->getAssignedUserName(),
-            'userEmail' => $comment->getAssignedUserEmail(),
-            'userId' => $comment->getUserId(),
-            'createdAt' => TimeHelper::toIso8601Utc($comment->getCreatedTime()),
-            'updatedAt' => TimeHelper::toIso8601Utc($comment->getModifiedTime()),
-            'formattedCreatedAt' => $comment->getFormattedCreatedAt(),
-            'isPrivate' => $comment->isPrivate(),
-            'isReply' => $comment->isReply(),
-            'parentCommentId' => $comment->getParentComments(),
-            'attachment' => $comment->getFilename(),
-            'reasonToEdit' => $comment->getReasonToEdit(),
+            'modcommentsid' => $comment->getId(),
+            'commentcontent' => $comment->getContent(),
+            'related_to' => $comment->getRelatedTo(),
+            'parent_comments' => $comment->getParentCommentId(),
+            'customer' => $comment->getCustomerId(),
+            'userid' => $comment->getUserId(),
+            'reasontoedit' => $comment->getReasonToEdit(),
+            'is_private' => $comment->isPrivate() ? 1 : 0,
+            'filename' => $comment->getFilename(),
+            'related_email_id' => $comment->getRelatedEmailId(),
         ];
     }
 
-    /**
-     * Map array of Comment entities to array of API responses
-     * 
-     * @param Comment[] $comments
-     * @return array[]
-     */
-    public static function collectionToApi(array $comments): array
+    public static function toDatabaseRows(array $comments): array
     {
-        return array_map(fn(Comment $c) => self::toApi($c), $comments);
+        return array_map(fn(Comment $comment) => self::toDatabaseRow($comment), $comments);
     }
+
+    public static function fromArray(array $data): Comment
+    {
+        return self::fromDatabaseRow((object) $data);
+    }
+
+    public static function toArray(Comment $comment): array
+    {
+        return [
+            'commentsid' => $comment->getId(),
+            'commentcontent' => $comment->getContent(),
+            'related_to' => $comment->getRelatedTo(),
+            'parent_comments' => $comment->getParentCommentId(),
+            'customer' => $comment->getCustomerId(),
+            'userid' => $comment->getUserId(),
+            'reasontoedit' => $comment->getReasonToEdit(),
+            'is_private' => $comment->isPrivate() ? 1 : 0,
+            'filename' => $comment->getFilename(),
+            'related_email_id' => $comment->getRelatedEmailId(),
+        ];
+    }
+    
+
+   
+
 }

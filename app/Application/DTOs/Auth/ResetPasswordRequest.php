@@ -21,15 +21,15 @@ class ResetPasswordRequest
         if (!filter_var($this->email, FILTER_VALIDATE_EMAIL)) {
             throw new InvalidArgumentException('Invalid email format');
         }
-
+        
         if (strlen($this->token) < 64) {
             throw new InvalidArgumentException('Invalid token format');
         }
-
+        
         if (strlen($this->password) < 8) {
             throw new InvalidArgumentException('Password must be at least 8 characters');
         }
-
+        
         if ($this->password !== $this->passwordConfirmation) {
             throw new InvalidArgumentException('Password confirmation does not match');
         }

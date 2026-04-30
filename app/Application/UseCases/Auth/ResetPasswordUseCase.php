@@ -36,9 +36,7 @@ class ResetPasswordUseCase
         $reset = $this->resetRepository->findValid($email, $hashedToken);
         
         if (!$reset) {
-            Log::warning('Password reset failed: invalid/expired token', [
-                'email' => $email,
-            ]);
+            
             throw new InvalidArgumentException('Invalid or expired reset token');
         }
         
@@ -65,10 +63,7 @@ class ResetPasswordUseCase
             // b) Mark token as used
             $this->resetRepository->markAsUsed($reset['id']);
             
-            Log::info('Password reset successful', [
-                'user_id' => $user->getId(),
-                'email' => $user->getEmail(),
-            ]);
+            
             
             return [
                 'message' => 'Password reset successfully',

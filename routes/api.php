@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\AttachmentController;
+use App\Http\Controllers\Api\CalendarController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\ContactController;
@@ -65,9 +66,11 @@ Route::middleware('jwt')->group(function () {
             //  GET /api/settings/roles → Role[] (con counts, sharing_rule, etc.)
             Route::get('/', [RoleController::class, 'index']);
             Route::post('/', [RoleController::class, 'store']);
+            //  GET /api/settings/roles/check-name → bool
+            Route::get('/check-name', [RoleController::class, 'checkName']);
             Route::put('/{id}', [RoleController::class, 'update']);
             Route::delete('/{id}', [RoleController::class, 'destroy']);
-
+                
             //  GET /api/settings/roles/{roleId} → RoleDto
             Route::put('/{roleId}/profile', [RoleProfileController::class, 'assign']);
             Route::get('/{roleId}/profile', [RoleProfileController::class, 'show']);
@@ -76,7 +79,10 @@ Route::middleware('jwt')->group(function () {
         Route::prefix('profiles')->group(function () {
             Route::get('/', [ProfileController::class, 'index']);
             Route::post('/', [ProfileController::class, 'store']);
+            //  GET /api/settings/profiles/check-name → bool
+            Route::get('/check-name', [ProfileController::class, 'checkName']);
             Route::put('/{id}', [ProfileController::class, 'update']);
+            Route::get('/{id}/permissions', [ProfileController::class, 'getPermissions']);
         });
     });
 
@@ -141,7 +147,7 @@ Route::middleware('jwt')->group(function () {
     // Comment
     Route::prefix('comments')->group(function () {
         Route::get('/{commentId}', [CommentController::class, 'show']);
-        Route::delete('/{commentId}', [CommentController::class, 'destroy']);
+        Route::delete('/{commentId}', [CommentController::class, 'destroy']); // @todo: check if it works
         Route::get('/{module}/{relatedId}', [CommentController::class, 'index']);
         Route::post('/{module}/{relatedId}', [CommentController::class, 'store']);
         Route::patch('/{module}/{relatedId}/{commentId}', [CommentController::class, 'update']);
@@ -156,10 +162,10 @@ Route::middleware('jwt')->group(function () {
 
     Route::prefix('tasks')->group(function () {
         // --- Task CRUD ---
-        Route::get('/', [TaskController::class, 'index']);                    // GET /api/tasks
-        Route::post('/', [TaskController::class, 'store']);                   // POST /api/tasks
-        Route::get('/{taskId}', [TaskController::class, 'show']);             // GET /api/tasks/{id}
-        Route::patch('/{taskId}', [TaskController::class, 'update']);         // PATCH /api/tasks/{id}
+       // Route::get('/', [TaskController::class, 'index']);                    // GET /api/tasks
+        //Route::post('/', [TaskController::class, 'store']);                   // POST /api/tasks
+        //Route::get('/{taskId}', [TaskController::class, 'show']);             // GET /api/tasks/{id}
+        //Route::patch('/{taskId}', [TaskController::class, 'update']);         // PATCH /api/tasks/{id}
         Route::patch('/{taskId}/status', [TaskController::class, 'updateStatus']); // PATCH /api/tasks/{id}/status
         Route::delete('/{taskId}', [TaskController::class, 'destroy']);       // DELETE /api/tasks/{id}
 
@@ -179,6 +185,18 @@ Route::middleware('jwt')->group(function () {
             Route::delete('/{attachmentId}', [AttachmentController::class, 'destroyByTask']); // DELETE /api/tasks/{id}/attachments/{attId}
         });
     });
+
+    Route::prefix('calendar')->group(function () {
+        Route::prefix('activities')->group(function () {
+            Route::get('/', [CalendarController::class, 'index']); // GET /api/calendar/activities
+            Route::post('/', [CalendarController::class, 'store']);                   // POST /api/tasks
+            Route::get('/{id}', [CalendarController::class, 'show']); // GET /api/calendar/activities/{id}
+            Route::patch('/{id}', [CalendarController::class, 'update']); // PATCH /api/calendar/activities/{id}
+            
+        });
+    });
+        
+
 
     Route::prefix('dashboard')->group(function () {
         // Tasks

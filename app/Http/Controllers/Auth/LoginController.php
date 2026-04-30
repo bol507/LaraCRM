@@ -69,10 +69,7 @@ class LoginController extends Controller
         $token = $jwtService->generateToken($vtigerUser->id);
 
 
-        Log::info('User logged in successfully', [
-            'user_id' => $vtigerUser->id,
-            'user_name' => $vtigerUser->user_name
-        ]);
+        
 
 
         return response()->json([
@@ -105,9 +102,7 @@ class LoginController extends Controller
         $token = $request->bearerToken();
 
 
-        Log::info('User logged out', [
-            'user_id' => $request->attributes->get('auth_user')?->getId() ?? 'unknown'
-        ]);
+        
 
         return response()->json([
             'message' => 'Sesión cerrada exitosamente'

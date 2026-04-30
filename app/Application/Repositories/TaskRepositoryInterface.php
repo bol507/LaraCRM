@@ -107,8 +107,8 @@ interface TaskRepositoryInterface
         int $limit = 50,
         array $filters = [],
         int $offset = 0,
-        ?int $requestedUserId = null,      
-        array $subordinateIds = [] 
+        ?int $requestedUserId = null,
+        array $subordinateIds = []
     ): array;
 
     /**
@@ -277,6 +277,18 @@ interface TaskRepositoryInterface
      * );
      * $taskId = $repository->create($request);
      */
+
+    /**
+     * Finds tasks belonging to multiple owners with pagination support.
+     *
+     * @param array $ownerIds List of owner/user IDs to filter tasks by
+     * @param integer $limit  Number of tasks to return per page
+     * @param array $filters Additional filters (status, priority, search terms, etc.)
+     * @param integer $offset Number of records to skip (for pagination)
+     * @return array  Array of task records for the current, page Array containing total, per_page, current_page, and total_pages
+     */
+    public function findTasksByOwnerIds(array $ownerIds, int $limit, array $filters, int $offset): array;
+
     public function create(CreateTaskRequest $request): int;
 
     /**
@@ -285,7 +297,7 @@ interface TaskRepositoryInterface
      * Updates task fields with audit trail support. Only fields provided
      * in the update data array are modified (partial update support).
      * 
-      * Updates an existing task using the UpdateTaskData DTO.
+     * Updates an existing task using the UpdateTaskData DTO.
      * Separates updates by table (vtiger_activity, vtiger_crmentity).
      * 
      * @param int $taskId Task ID to update
@@ -452,48 +464,17 @@ interface TaskRepositoryInterface
      * @example
      * // In a scheduled job (e.g., daily cleanup)
      * $deletedCount = $repository->deletePermanently(olderThanDays: 90);
-     * Log::info("Permanently deleted {$deletedCount} old tasks");
      */
     public function deletePermanently(int $olderThanDays): int;
 
     /**
-     * Calculate statistics for user's tasks
-     * 
-     * Returns aggregated statistics about a user's tasks for dashboard widgets
-     * and reporting. Includes counts by status, priority, and overdue state.
-     * This method supports optional filters for more granular statistics.
-     * 
-     * @param int $userId User ID to calculate stats for
-     * @param array<string, mixed> $filters Optional filters to apply (same as findByUserId)
-     *        - status: string|array|null - Filter by status
-     *        - priority: string|array|null - Filter by priority
-     *        - dateFrom: string|null - Filter tasks with due_date >= this date
-     *        - dateTo: string|null - Filter tasks with due_date <= this date
-     * 
-     * @return array{
-     *     total: int,           // Total number of tasks matching filters
-     *     completed: int,       // Tasks with status = 'Completed'
-     *     pending: int,         // Tasks not completed
-     *     overdue: int,         // Pending tasks with due_date < today
-     *     highPriority: int     // Pending tasks with priority = 'High'
-     * }
-     * 
-     * @throws \RuntimeException If database query fails
-     * @throws \InvalidArgumentException If userId is invalid (<= 0)
-     * 
-     * @example
-     * // Get statistics for dashboard with filters
-     * $stats = $repository->calculateStats(123, ['priority' => 'High']);
-     * // Returns: ['total' => 15, 'completed' => 5, 'pending' => 10, 'overdue' => 3, 'highPriority' => 8]
-     * 
-     * @example
-     * // Get overdue task count only
-     * $stats = $repository->calculateStats(123, ['dateTo' => date('Y-m-d')]);
-     * echo "Overdue tasks: {$stats['overdue']}";
-     * 
-     * @see getStatistics() For the non-filtered version of this method
+     * Calculates task statistics for multiple owners
+     *
+     * @param array $ownerIds List of owner/user IDs to filter tasks by
+     * @param array $filters Additional filters (status, priority, search terms, etc.)
+     * @return array Associative array with statistics: total, completed, pending, overdue, highPriority
      */
-    public function calculateStats(int $userId, array $filters = []): array;
+    public function calculateStats(array $ownerIds, array $filters = []): array;
 
     /**
      * Perform a global search for tasks with ranking and limits

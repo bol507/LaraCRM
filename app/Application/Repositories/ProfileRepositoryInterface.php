@@ -55,7 +55,7 @@ interface ProfileRepositoryInterface
      * Create a new profile in vtiger_profile.
      * Returns the new profileid.
      */
-    public function create(string $name, string $description = ''): int;
+    public function create(string $name, string $description = ''): array;
 
     /**
      * Parse Vtiger's bitwise permission value back to string array.

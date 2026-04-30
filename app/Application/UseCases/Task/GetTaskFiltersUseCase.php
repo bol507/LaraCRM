@@ -15,19 +15,10 @@ class GetTaskFiltersUseCase
         private readonly RoleRepositoryInterface $roleRepository,
     ) {}
 
-    /**
-     * Get task filters for a user
-     * 
-     * @param GetTaskFiltersRequest $request
-     * @return GetTaskFiltersResponse
-     * 
-     * @throws DomainException If user is not authorized to view tasks
-     */
     public function execute(GetTaskFiltersRequest $request): GetTaskFiltersResponse
     {
+        // 1. Admins have full access (separate logic or canViewAllUsers flag)
         $isAdmin = $this->isAdminUseCase->execute($request->currentUserId);
-        
-       
         if ($isAdmin) {
             return new GetTaskFiltersResponse(
                 requestedUserId: $request->requestedUserId,
@@ -37,35 +28,34 @@ class GetTaskFiltersUseCase
             );
         }
 
-       
-        if ($request->requestedUserId === null || 
-            $request->requestedUserId === $request->currentUserId) {
-            return new GetTaskFiltersResponse(
-                requestedUserId: null,
-                subordinateIds: [],
-                canViewAllUsers: false,
-                canViewOtherUsers: false,
-            );
-        }
-
-       
+        // 2. Calculate subordinates for non-admins (Always, not only when filtering)
         $subordinateIds = $this->roleRepository->findSubordinateUserIds(
             $request->currentUserRoleId
         );
 
-       
-        if (in_array($request->requestedUserId, $subordinateIds)) {
+        // 3. Default view (Own Dashboard)
+        if ($request->requestedUserId === null || 
+            $request->requestedUserId === $request->currentUserId) {
+            
+            return new GetTaskFiltersResponse(
+                requestedUserId: null,
+                subordinateIds: $subordinateIds, // Returns the actual list of IDs
+                canViewAllUsers: false,
+                canViewOtherUsers: !empty($subordinateIds),
+            );
+        }
+
+        // 4. View of a specific user
+        if (in_array($request->requestedUserId, $subordinateIds, true)) {
             return new GetTaskFiltersResponse(
                 requestedUserId: $request->requestedUserId,
-                subordinateIds: $subordinateIds,
+                subordinateIds: [$request->requestedUserId], // Filter only by that user
                 canViewAllUsers: false,
                 canViewOtherUsers: true,
             );
         }
 
-       
-        throw new DomainException(
-            'Do not have permission to view tasks for this user'
-        );
+        // 5. Attempt to view an unauthorized user
+        throw new DomainException('Do not have permission to view tasks for this user');
     }
 }

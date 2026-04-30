@@ -45,10 +45,9 @@ class VtigerUserRepository implements UserRepositoryInterface
      */
     public function getAll(int $page, int $perPage, ?string $search): LengthAwarePaginator
     {
-        $query = DB::connection('vtiger')
-            ->table('vtiger_users')
-            ->leftJoin('vtiger_user2role', 'vtiger_users.id', '=', 'vtiger_user2role.userid')
-            ->leftJoin('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
+        $query = $this->query()
+            ->leftJoin(self::USER_ROLE_TABLE, 'vtiger_users.id', '=', 'vtiger_user2role.userid')
+            ->leftJoin(self::ROLE_TABLE, 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
             ->select(
                 'vtiger_users.id',
                 'vtiger_users.user_name',
@@ -60,7 +59,7 @@ class VtigerUserRepository implements UserRepositoryInterface
                 'vtiger_users.phone_crm_extension as phone_crm_extension',
                 'vtiger_users.department',
                 'vtiger_users.reports_to_id',
-                'vtiger_role.roleid as role_id',
+                'vtiger_user2role.roleid as role_id',
                 'vtiger_role.rolename',
                 'vtiger_role.depth as role_depth',
                 'vtiger_role.parentrole as role_parent',
@@ -101,10 +100,9 @@ class VtigerUserRepository implements UserRepositoryInterface
     public function findById(int $id): ?User
     {
         try {
-            $row = DB::connection('vtiger')
-                ->table('vtiger_users')
-                ->leftJoin('vtiger_user2role', 'vtiger_users.id', '=', 'vtiger_user2role.userid')
-                ->leftJoin('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
+            $row = $this->query()
+                ->leftJoin(self::USER_ROLE_TABLE, 'vtiger_users.id', '=', 'vtiger_user2role.userid')
+                ->leftJoin(self::ROLE_TABLE, 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
                 ->select(
                     'vtiger_users.id',
                     'vtiger_users.user_name',
@@ -116,7 +114,7 @@ class VtigerUserRepository implements UserRepositoryInterface
                     'vtiger_users.phone_crm_extension as phone_crm_extension',
                     'vtiger_users.department',
                     'vtiger_users.reports_to_id',
-                    'vtiger_role.roleid as role_id',
+                    'vtiger_user2role.roleid as role_id',
                     'vtiger_role.rolename',
                     'vtiger_role.depth as role_depth',
                     'vtiger_role.parentrole as role_parent',
@@ -588,6 +586,36 @@ class VtigerUserRepository implements UserRepositoryInterface
         }
 
         return $user;
+    }
+
+    public function update(int $id, array $data, int $modifiedByUserId): bool
+    {
+        if (empty($data)) {
+            return true; // Nothing to update
+        }
+
+        // Remove managed fields that should be handled by the repository
+        $sanitized = array_diff_key($data, [
+            'id' => null,
+            'password' => null,
+        ]);
+
+        if (empty($sanitized)) {
+            return true;
+        }
+        $now = now()->format('Y-m-d H:i:s');
+        $affected = $this->query()
+            ->where('id', $id)
+            ->update([ ...$sanitized,
+                    'date_modified' => $now,
+                    'modified_user_id' => $modifiedByUserId
+            ]);
+
+        if ($affected > 0) {
+            $this->clearRoleCache($id);
+        }
+
+        return $affected > 0;
     }
 
     /**

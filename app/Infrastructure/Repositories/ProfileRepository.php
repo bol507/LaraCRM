@@ -3,9 +3,12 @@
 
 namespace App\Infrastructure\Repositories;
 
+use App\Application\Repositories\ModuleRepositoryInterface;
 use App\Application\Repositories\ProfileRepositoryInterface;
+use App\Infrastructure\Services\ProfilePermissionService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ProfileRepository implements ProfileRepositoryInterface
 {
@@ -57,57 +60,124 @@ class ProfileRepository implements ProfileRepositoryInterface
 
     public function updateModulePermissions(int $profileId, array $modules): bool
     {
-        return DB::connection(self::CONNECTION)->transaction(function () use ($profileId, $modules): bool {
-            // 1. Get all active modules in the system (presence = 0)
-            $allTabs = $this->query()
-                ->where('presence', 0) // Only installed and active modules
-                ->pluck('tabid')
-                ->toArray();
+        $connection = DB::connection(self::CONNECTION);
 
-            if (empty($allTabs)) {
-                // No modules in the system → nothing to update
-                return true;
-            }
+        try {
+            return $connection->transaction(function () use ($connection, $profileId, $modules): bool {
 
-            $allowedTabIds = array_column($modules, 'tabid');
-            $updates = [];
-            $inserts = [];
+                // 1. Get active modules (direct query, without tableExists)
+                $allTabs = $connection
+                    ->table(self::TAB_TABLE)
+                    ->where('presence', 0)
+                    ->pluck('tabid')
+                    ->toArray();
 
-            // 2. Prepare batch updates/inserts
-            foreach ($allTabs as $tabid) {
-                $moduleConfig = collect($modules)->firstWhere('tabid', $tabid);
-                
-                if ($moduleConfig) {
-                    // Module allowed: calculate bitwise permission value
-                    $permissionValue = $this->calculatePermissionValue($moduleConfig['permissions'] ?? []);
-                    
-                    $updates[] = [
-                        'profileid' => $profileId,
-                        'tabid' => $tabid,
+                if (empty($allTabs)) {
+                    Log::warning('No active modules found in vtiger_tab', ['profile_id' => $profileId]);
+                    return true;
+                }
+
+                // 2. Map received modules for O(1) lookup
+                $modulesByTabid = collect($modules)->keyBy('tabid');
+
+                $upserts = [];
+                $processedCount = 0;
+
+                foreach ($allTabs as $tabid) {
+                    $moduleConfig = $modulesByTabid->get($tabid);
+
+                    // Calculate bitwise value
+                    $permissionValue = $moduleConfig
+                        ? $this->calculatePermissionValue($moduleConfig['permissions'] ?? [])
+                        : 0;
+
+                    $upserts[] = [
+                        'profileid'   => $profileId,
+                        'tabid'       => $tabid,
                         'permissions' => $permissionValue,
                     ];
-                } else {
-                    // Module NOT allowed: hide with permissions = 0
-                    $inserts[] = [
-                        'profileid' => $profileId,
-                        'tabid' => $tabid,
-                        'permissions' => 0,
-                    ];
+
+                    if ($moduleConfig) $processedCount++;
                 }
-            }
 
-            // 3. Execute batch updates (more efficient than individual loops)
-            if (!empty($updates)) {
-                $this->batchUpsert($profileId, $updates);
-            }
+                // 3. Execute batch UPSERT
+                if (!empty($upserts)) {
+                    $this->executeBatchUpsert($connection, $upserts);
+                }
 
-            // 4. Insert hidden modules (only if they don't already exist)
-            if (!empty($inserts)) {
-                $this->batchInsertHidden($profileId, $inserts);
-            }
+                
+                
+                $permService = app(ProfilePermissionService::class);
+                if ($permService) {
+                    $permService->clearCache($profileId);
+                }
 
-            return true;
-        });
+                // Also clear module cache if needed
+                $moduleRepo = app(ModuleRepositoryInterface::class);
+                if ($moduleRepo) {
+                    $moduleRepo->clearCache();
+                }
+                
+                return true;
+            });
+        } catch (\Exception $e) {
+            Log::error('Failed to update profile permissions', [
+                'profile_id' => $profileId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'modules_count' => count($modules),
+            ]);
+            return false; // Return false so frontend knows it failed
+        }
+    }
+
+    private function executeBatchUpsert($connection, array $records): void
+    {
+        if (empty($records)) return;
+
+        $values = [];
+        $bindings = [];
+
+        foreach ($records as $record) {
+            $values[] = '(?, ?, ?)';
+            $bindings[] = $record['profileid'];
+            $bindings[] = $record['tabid'];
+            $bindings[] = $record['permissions'];
+        }
+
+        $sql = "INSERT INTO " . self::PROFILE2TAB_TABLE . " (profileid, tabid, permissions) 
+            VALUES " . implode(', ', $values) . "
+            ON DUPLICATE KEY UPDATE permissions = VALUES(permissions)";
+
+        $connection->statement($sql, $bindings);
+    }
+
+    /**
+     * Executes batch UPSERT in vtiger_profile2tab.
+     * Uses ON DUPLICATE KEY UPDATE for efficiency.
+     */
+    private function batchUpsertPermissions(int $profileId, array $records): void
+    {
+        if (empty($records)) return;
+
+        $connection = DB::connection(self::CONNECTION);
+
+        // Build SQL for INSERT ... ON DUPLICATE KEY UPDATE
+        $values = [];
+        $bindings = [];
+
+        foreach ($records as $record) {
+            $values[] = '(?, ?, ?)';
+            $bindings[] = $record['profileid'];
+            $bindings[] = $record['tabid'];
+            $bindings[] = $record['permissions'];
+        }
+
+        $sql = "INSERT INTO " . self::PROFILE2TAB_TABLE . " (profileid, tabid, permissions) 
+            VALUES " . implode(', ', $values) . "
+            ON DUPLICATE KEY UPDATE permissions = VALUES(permissions)";
+
+        $connection->statement($sql, $bindings);
     }
 
     /**
@@ -123,17 +193,47 @@ class ProfileRepository implements ProfileRepositoryInterface
     /**
      * @inheritDoc
      */
-    public function create(string $name, string $description = ''): int
+    public function create(string $name, ?string $roleId = null): array
     {
-        $now = now()->format('Y-m-d H:i:s');
+        $connection = DB::connection(self::CONNECTION);
 
-        return $this->query()
-            ->insertGetId([
-                'profilename' => $name,
-                'description' => $description,
-                'createdtime' => $now,
-                'modifiedtime' => $now,
+        return $connection->transaction(function () use ($connection, $name, $roleId) {
+            // 1. Create profile in vtiger_profile
+            $profileId = $connection->table(self::PROFILE_TABLE)->insertGetId([
+                'profilename'   => $name,
             ]);
+
+            // 2. Populate default permissions (0 = hidden/no access)
+            $activeTabs = $connection
+                ->table(self::TAB_TABLE)
+                ->where('presence', 0)
+                ->pluck('tabid')
+                ->toArray();
+
+            $defaultPerms = array_map(fn($tabid) => [
+                'profileid'   => $profileId,
+                'tabid'       => $tabid,
+                'permissions' => 0, // No initial access
+            ], $activeTabs);
+
+            if (!empty($defaultPerms)) {
+                $connection->table(self::PROFILE2TAB_TABLE)->insert($defaultPerms);
+            }
+
+            // 3. Optional: Immediately assign to a role (hierarchy)
+            if ($roleId) {
+                $connection->table('vtiger_role2profile')->insert([
+                    'roleid'    => $roleId,
+                    'profileid' => $profileId,
+                ]);
+            }
+
+            return [
+                'profileid' => $profileId,
+                'name'      => $name,
+                'role_id'   => $roleId,
+            ];
+        });
     }
 
     /**
@@ -152,13 +252,13 @@ class ProfileRepository implements ProfileRepositoryInterface
             4 => 'create',
             8 => 'delete',
         ];
-        
+
         foreach ($map as $bit => $name) {
             if ($value & $bit) {
                 $permissions[] = $name;
             }
         }
-        
+
         return $permissions;
     }
 
@@ -179,7 +279,7 @@ class ProfileRepository implements ProfileRepositoryInterface
         // (Laravel's upsert() is not available in all versions with multiple connections)
         $values = [];
         $bindings = [];
-        
+
         foreach ($records as $record) {
             $values[] = '(?, ?, ?)';
             $bindings[] = $record['profileid'];
@@ -233,20 +333,11 @@ class ProfileRepository implements ProfileRepositoryInterface
     private function calculatePermissionValue(array $permissions): int
     {
         $value = 0;
-        $map = [
-            'read' => 1,
-            'write' => 2,
-            'create' => 4,
-            'delete' => 8,
-        ];
-        
-        foreach ($permissions as $perm) {
-            $perm = strtolower(trim($perm));
-            if (isset($map[$perm])) {
-                $value += $map[$perm];
-            }
-        }
-        
+        if (in_array('read', $permissions, true))   $value |= 1;
+        if (in_array('write', $permissions, true))  $value |= 2;
+        if (in_array('create', $permissions, true)) $value |= 4;
+        if (in_array('delete', $permissions, true)) $value |= 8;
+
         return $value;
     }
 

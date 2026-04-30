@@ -515,13 +515,7 @@ class TaskController extends Controller
                 sendNotification: $request->input('send_notification') ?? $request->input('sendNotification'),
             );
 
-            // Debug log para verificar
-            Log::info('UpdateTaskRequest created', [
-                'dueDate' => $updateRequest->dueDate,
-                'dateStart' => $updateRequest->dateStart,
-                'subject' => $updateRequest->subject,
-                'location' => $updateRequest->location,
-            ]);
+            
 
             // Execute use case: authorization + domain validation + persistence
             $success = $this->updateTaskUseCase->execute(

@@ -25,15 +25,15 @@ class RoleProfileController extends Controller
     public function assign(Request $request, string $roleId): JsonResponse
     {
         try {
-            // Validación HTTP
+            // HTTP validation
             $validated = $request->validate([
                 'profile_id' => 'required|integer|exists:vtiger.vtiger_profile,profileid',
             ]);
 
-            // DTO con validación de dominio
+            // DTO with domain validation
             $dto = AssignProfileRequest::fromArray($validated, $roleId);
             
-            // Ejecutar caso de uso
+            // Execute use case
             $this->assignUseCase->execute($dto);
             
             return response()->json([

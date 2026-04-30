@@ -7,8 +7,6 @@ use App\Application\UseCases\Core\Entity\UpdateEntityUseCase;
 use App\Infrastructure\Repositories\QuoteRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -22,10 +20,10 @@ class UpdateQuoteUseCase
     /**
      * Execute the quote update use case
      *
-     * Orquestación de DML:
-     * 1. Validar que la cotización existe
-     * 2. Actualizar vtiger_quotes (datos de cotización)
-     * 3. Actualizar vtiger_crmentity (label + modifiedby)
+     * DML orchestration:
+     * 1. Validate that the quote exists
+     * 2. Update vtiger_quotes (quote data)
+     * 3. Update vtiger_crmentity (label + modifiedby)
      *
      * @param  UpdateQuoteRequest  $request  The request with update data
      * @param  int|null  $modifiedByUserId  User performing the update
@@ -44,12 +42,12 @@ class UpdateQuoteUseCase
 
         $userId = $modifiedByUserId ?? CurrentUserService::idOr(1);
 
-        // Validar que la cotización existe
+        // Validate that the quote exists
         if (! $this->quote->exists($quoteId)) {
             throw new InvalidArgumentException('Quote not found');
         }
 
-        // Preparar datos para actualizar usando los campos del DTO
+        // Prepare data for update using DTO fields
         $data = [
             'subject' => $request->subject,
             'potentialid' => $request->potentialid,
@@ -58,12 +56,12 @@ class UpdateQuoteUseCase
             'accountid' => $request->accountid ?? null,
         ];
 
-        // Filtrar valores null
+        // Filter out null values
         $data = array_filter($data, fn ($v) => $v !== null);
 
         $success = $this->quote->update($request, $userId);
 
-        // Registrar actividad
+        // Register activity
         $this->logActivity($quoteId, $userId);
 
         return $success;
@@ -78,10 +76,7 @@ class UpdateQuoteUseCase
                 userId: $userId
             );
         } catch (\Exception $e) {
-            Log::error('Failed to log activity', [
-                'quoteId' => $quoteId,
-                'error' => $e->getMessage(),
-            ]);
+            // Silently fail - activity logging is non-critical
         }
     }
 }

@@ -22,37 +22,36 @@ class AssignProfileToRoleUseCase
 
     /**
      * Assign a permission profile to a hierarchical role.
-     * Updates vtiger_profile2role and clears Vtiger permission cache.
      *
      * @throws InvalidArgumentException If role or profile doesn't exist
      * @throws RuntimeException If assignment fails
      */
     public function execute(AssignProfileRequest $request): bool
     {
-        // 1. validate that role exists
+        // 1. Validate that role exists
         $role = $this->roleRepository->findById($request->roleId);
         if (!$role) {
             throw new InvalidArgumentException("Role '{$request->roleId}' does not exist");
         }
 
-        // 2. validate that profile exists
+        // 2. Validate that profile exists
         $profile = $this->profileRepository->findById($request->profileId);
         if (!$profile) {
             throw new InvalidArgumentException("Profile with ID {$request->profileId} does not exist");
         }
 
-        // 3. assign in transaction
+        // 3. Assign in transaction
         return DB::connection('vtiger')->transaction(function () use ($request): bool {
-            // a) Eliminar asignación anterior (si existe)
+            // a) Delete previous assignment (if exists)
             $this->assignmentRepository->deleteByRoleId($request->roleId);
             
-            // b) create new assignment
+            // b) Create new assignment
             $assigned = $this->assignmentRepository->assign($request->roleId, $request->profileId);
             if (!$assigned) {
                 throw new RuntimeException("Failed to assign profile {$request->profileId} to role {$request->roleId}");
             }
             
-            // c) clear cache of permissions in Vtiger
+            // c) Clear Vtiger permission cache
             $this->clearVtigerPermissionCache();
             
             return true;
@@ -77,7 +76,6 @@ class AssignProfileToRoleUseCase
                 DB::connection('vtiger')->statement("DELETE FROM {$table}");
             } catch (\Exception $e) {
                 // Ignore if table doesn't exist (Vtiger < 7.2)
-                Log::warning("Could not clear cache table {$table}: " . $e->getMessage());
             }
         }
     }

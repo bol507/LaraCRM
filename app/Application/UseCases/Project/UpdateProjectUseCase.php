@@ -85,10 +85,7 @@ class UpdateProjectUseCase
                 userId: $userId
             );
         } catch (\Exception $e) {
-            Log::error('Failed to log activity', [
-                'projectId' => $projectId,
-                'error' => $e->getMessage(),
-            ]);
+            //
         }
     }
 }

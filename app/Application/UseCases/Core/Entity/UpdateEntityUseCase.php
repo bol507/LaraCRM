@@ -46,7 +46,7 @@ class UpdateEntityUseCase
             'deleted' => true,
         ]);
 
-        // Agregar modifiedby si no está presente
+        
         if (! isset($sanitized['modifiedby'])) {
             $sanitized['modifiedby'] = $userId;
         }

@@ -6,7 +6,6 @@ namespace App\Application\UseCases\Profile;
 use App\Application\DTOs\Profile\CreateProfileRequest;
 use App\Application\Repositories\ProfileRepositoryInterface;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -34,7 +33,8 @@ class CreateProfileUseCase
             }
 
             // 2. Create profile in vtiger_profile
-            $profileId = $this->repository->create($dto->name, $dto->description ?? '');
+            $profile = $this->repository->create($dto->name, $dto->description ?? '');
+            $profileId = $profile['profileid'];
 
             // 3. Initialize module permissions (all hidden by default)
             if (!empty($dto->modules)) {
@@ -158,7 +158,6 @@ class CreateProfileUseCase
                 DB::connection('vtiger')->statement("DELETE FROM {$table}");
             } catch (\Exception $e) {
                 // Ignore if table doesn't exist (Vtiger < 7.2)
-                Log::warning("Could not clear cache table {$table}: " . $e->getMessage());
             }
         }
     }

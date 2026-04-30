@@ -14,6 +14,7 @@ use App\Application\UseCases\Role\UpdateRoleUseCase;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -57,6 +58,7 @@ class RoleController extends Controller
         $dto = UpdateRoleRequest::fromArray($request->validate([
             'name' => 'nullable|string|max:100',
             'parent_id' => 'nullable|string|exists:vtiger.vtiger_role,roleid',
+            'sharing_rule' => 'nullable|integer|in:0,1,2,3',
         ]));
         $role = $this->update->execute($id, $dto);
         return response()->json(['data' => $role, 'message' => 'Role updated']);
@@ -136,5 +138,31 @@ class RoleController extends Controller
         } catch (\InvalidArgumentException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
+    }
+
+ 
+
+    //TODO create use case  
+    public function checkName(Request $request): JsonResponse
+    {
+        $name = $request->query('name');
+        $excludeId = $request->query('exclude_id');
+
+        if (!$name) {
+            return response()->json(['error' => 'Name parameter required'], 400);
+        }
+
+        $exists = DB::connection('vtiger')
+            ->table('vtiger_role')
+            ->join('vtiger_crmentity', function ($join) {
+                $join->on('vtiger_role.roleid', '=', 'vtiger_crmentity.crmid')
+                    ->where('vtiger_crmentity.setype', '=', 'Roles');
+            })
+            ->where('vtiger_role.rolename', $name)
+            ->where('vtiger_crmentity.deleted', 0)
+            ->when($excludeId, fn($q) => $q->where('vtiger_role.roleid', '!=', $excludeId))
+            ->exists();
+
+        return response()->json(['available' => !$exists]);
     }
 }

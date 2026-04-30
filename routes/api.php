@@ -4,29 +4,34 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\AttachmentController;
+use App\Http\Controllers\Api\CalendarController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\GlobalSearchController;
 use App\Http\Controllers\Api\OpportunityController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\QuotePDFController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\PurchaseController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\RoleProfileController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VendorController;
-
+use App\Http\Controllers\Auth\AuthController;
 
 Route::prefix('auth')->group(function () {
-    Route::post('/login', [LoginController::class, 'login']);
-    Route::post('/logout', [LoginController::class, 'logout']);
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 })->middleware('jwt')
     ->group(function () {
-        Route::get('/me', [LoginController::class, 'me']);
+        Route::get('/me', [AuthController::class, 'me']);
     });
 
 
@@ -40,7 +45,7 @@ Route::middleware('jwt')->group(function () {
 
 
 
-        //  Admin only 
+        //  Admin only
         Route::middleware('requireAdmin')->group(function () {
             Route::get('/', [UserController::class, 'index']);
             Route::post('/', [UserController::class, 'store']);
@@ -50,12 +55,43 @@ Route::middleware('jwt')->group(function () {
             Route::put('/{id}/change-password', [UserController::class, 'changePassword']);
         });
     });
-
+    // Roles
     Route::prefix('roles')->group(function () {
-        Route::get('/', [RoleController::class, 'index']);                   
-        Route::put('/users/{userId}/role', [RoleController::class, 'assign']);     
+        Route::get('/', [RoleController::class, 'available']); //for roleSelect
+        Route::put('/users/{userId}/role', [RoleController::class, 'assign']);
     });
 
+    Route::prefix('settings')->middleware('requireAdmin')->group(function () {
+        Route::prefix('roles')->group(function () {
+            //  GET /api/settings/roles → Role[] (con counts, sharing_rule, etc.)
+            Route::get('/', [RoleController::class, 'index']);
+            Route::post('/', [RoleController::class, 'store']);
+            //  GET /api/settings/roles/check-name → bool
+            Route::get('/check-name', [RoleController::class, 'checkName']);
+            Route::put('/{id}', [RoleController::class, 'update']);
+            Route::delete('/{id}', [RoleController::class, 'destroy']);
+                
+            //  GET /api/settings/roles/{roleId} → RoleDto
+            Route::put('/{roleId}/profile', [RoleProfileController::class, 'assign']);
+            Route::get('/{roleId}/profile', [RoleProfileController::class, 'show']);
+        });
+        //  GET /api/settings/profiles → Profile[]
+        Route::prefix('profiles')->group(function () {
+            Route::get('/', [ProfileController::class, 'index']);
+            Route::post('/', [ProfileController::class, 'store']);
+            //  GET /api/settings/profiles/check-name → bool
+            Route::get('/check-name', [ProfileController::class, 'checkName']);
+            Route::put('/{id}', [ProfileController::class, 'update']);
+            Route::get('/{id}/permissions', [ProfileController::class, 'getPermissions']);
+        });
+    });
+
+    /*Route::prefix('profiles')->group(function () {
+        Route::get('/', [ProfileController::class, 'index']);
+        Route::post('/', [ProfileController::class, 'store']);
+        Route::put('/{id}', [ProfileController::class, 'update']);
+        Route::delete('/{id}', [ProfileController::class, 'destroy']);
+    });*/
 
     // User profile
     Route::get('/profile', [UserController::class, 'getMyProfile']);
@@ -108,16 +144,16 @@ Route::middleware('jwt')->group(function () {
         Route::delete('/{id}', [ProjectController::class, 'destroy']);
     });
 
-    // Comment 
+    // Comment
     Route::prefix('comments')->group(function () {
         Route::get('/{commentId}', [CommentController::class, 'show']);
-        Route::delete('/{commentId}', [CommentController::class, 'destroy']);
+        Route::delete('/{commentId}', [CommentController::class, 'destroy']); // @todo: check if it works
         Route::get('/{module}/{relatedId}', [CommentController::class, 'index']);
         Route::post('/{module}/{relatedId}', [CommentController::class, 'store']);
         Route::patch('/{module}/{relatedId}/{commentId}', [CommentController::class, 'update']);
     });
 
-    // Attachment 
+    // Attachment
     Route::prefix('attachments')->group(function () {
         Route::post('/{module}/{recordId}', [AttachmentController::class, 'upload']);
         Route::get('/{module}/{recordId}', [AttachmentController::class, 'index']);
@@ -126,10 +162,10 @@ Route::middleware('jwt')->group(function () {
 
     Route::prefix('tasks')->group(function () {
         // --- Task CRUD ---
-        Route::get('/', [TaskController::class, 'index']);                    // GET /api/tasks
-        Route::post('/', [TaskController::class, 'store']);                   // POST /api/tasks
-        Route::get('/{taskId}', [TaskController::class, 'show']);             // GET /api/tasks/{id}
-        Route::patch('/{taskId}', [TaskController::class, 'update']);         // PATCH /api/tasks/{id}
+       // Route::get('/', [TaskController::class, 'index']);                    // GET /api/tasks
+        //Route::post('/', [TaskController::class, 'store']);                   // POST /api/tasks
+        //Route::get('/{taskId}', [TaskController::class, 'show']);             // GET /api/tasks/{id}
+        //Route::patch('/{taskId}', [TaskController::class, 'update']);         // PATCH /api/tasks/{id}
         Route::patch('/{taskId}/status', [TaskController::class, 'updateStatus']); // PATCH /api/tasks/{id}/status
         Route::delete('/{taskId}', [TaskController::class, 'destroy']);       // DELETE /api/tasks/{id}
 
@@ -149,6 +185,18 @@ Route::middleware('jwt')->group(function () {
             Route::delete('/{attachmentId}', [AttachmentController::class, 'destroyByTask']); // DELETE /api/tasks/{id}/attachments/{attId}
         });
     });
+
+    Route::prefix('calendar')->group(function () {
+        Route::prefix('activities')->group(function () {
+            Route::get('/', [CalendarController::class, 'index']); // GET /api/calendar/activities
+            Route::post('/', [CalendarController::class, 'store']);                   // POST /api/tasks
+            Route::get('/{id}', [CalendarController::class, 'show']); // GET /api/calendar/activities/{id}
+            Route::patch('/{id}', [CalendarController::class, 'update']); // PATCH /api/calendar/activities/{id}
+            
+        });
+    });
+        
+
 
     Route::prefix('dashboard')->group(function () {
         // Tasks

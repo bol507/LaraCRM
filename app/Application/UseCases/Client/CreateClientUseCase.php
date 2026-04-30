@@ -140,10 +140,7 @@ class CreateClientUseCase
                 userId: $userId
             );
         } catch (\Exception $e) {
-            Log::error('Failed to log activity', [
-                'clientId' => $clientId,
-                'error' => $e->getMessage(),
-            ]);
+            //
         }
     }
 }

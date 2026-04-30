@@ -27,10 +27,10 @@ class CreateProjectUseCase
     /**
      * Execute the use case to create a project
      *
-     * Orquestación de DML:
-     * 1. Generar ID único
-     * 2. Insertar vtiger_crmentity (metadata)
-     * 3. Insertar vtiger_project (datos del proyecto)
+     * DML orchestration:
+     * 1. Generate unique ID
+     * 2. Insert vtiger_crmentity (metadata)
+     * 3. Insert vtiger_project (project data)
      *
      * @param  array  $data  Project data
      * @param  int|null  $createdByUserId  ID of the user creating the project
@@ -49,18 +49,18 @@ class CreateProjectUseCase
 
         $assignedUserId = $data['assigned_user_id'] ?? null;
         if ($assignedUserId === null) {
-            $assignedUserId = 2; //  ID  "All" en Vtiger
+            $assignedUserId = 2; // ID "All" in Vtiger
         }
 
         return DB::connection('vtiger')->transaction(function () use ($data, $userId, $assignedUserId) {
-            // 1. Generar ID único
+            // 1. Generate unique ID
             $projectId = $this->idGenerator->generateNextId(
                 table: 'vtiger_project',
                 column: 'projectid',
                 lockName: self::ID_LOCK_NAME
             );
 
-            // 2. Insertar vtiger_crmentity using generic use case
+            // 2. Insert vtiger_crmentity using generic use case
             $this->createEntity->execute(
                 data: [
                     'label' => trim($data['projectname']),
@@ -74,7 +74,7 @@ class CreateProjectUseCase
                 crmId: $projectId
             );
 
-            // 3. Insertar vtiger_project
+            // 3. Insert vtiger_project
             $this->project->insert([
                 'projectid' => $projectId,
                 'project_no' => $this->project->getNextProjectNumber(),
@@ -95,7 +95,7 @@ class CreateProjectUseCase
                 'cf_922' => null,
             ]);
 
-            // Registrar actividad
+            // Register activity
             $this->logActivity($projectId, $userId);
 
             return $projectId;
@@ -111,10 +111,7 @@ class CreateProjectUseCase
                 userId: $userId
             );
         } catch (\Exception $e) {
-            Log::error('Failed to log activity', [
-                'projectId' => $projectId,
-                'error' => $e->getMessage(),
-            ]);
+            // Silently fail - activity logging is non-critical
         }
     }
 }

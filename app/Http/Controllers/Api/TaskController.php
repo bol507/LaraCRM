@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Application\DTOs\Task\CreateTaskRequest;
+use App\Application\DTOs\Task\GetTaskFiltersRequest;
 use App\Application\DTOs\Task\TaskDto;
 use App\Application\DTOs\Task\UpdateTaskRequest;
 use App\Application\UseCases\Task\CreateTaskUseCase;
 use App\Application\UseCases\Task\DeleteTaskUseCase;
+use App\Application\UseCases\Task\GetTaskFiltersUseCase;
 use App\Application\UseCases\Task\GetTasksUseCase;
 use App\Application\UseCases\Task\GetTaskUseCase;
 use App\Application\UseCases\Task\UpdateTaskStatusUseCase;
@@ -50,40 +52,7 @@ use RuntimeException;
  */
 class TaskController extends Controller
 {
-    /**
-     * Use case for listing tasks with pagination and filters
-     */
-    private readonly GetTasksUseCase $getTasksUseCase;
-
-    /**
-     * Use case for retrieving a single task by ID
-     */
-    private readonly GetTaskUseCase $getTaskUseCase;
-
-    /**
-     * Use case for creating new tasks
-     */
-    private readonly CreateTaskUseCase $createTaskUseCase;
-
-    /**
-     * Use case for updating existing tasks
-     */
-    private readonly UpdateTaskUseCase $updateTaskUseCase;
-
-    /**
-     * Use case for updating task status (shortcut)
-     */
-    private readonly UpdateTaskStatusUseCase $updateTaskStatusUseCase;
-
-    /**
-     * Use case for soft-deleting tasks
-     */
-    private readonly DeleteTaskUseCase $deleteTaskUseCase;
-
-    /**
-     * Use case for checking admin privileges
-     */
-    private readonly IsAdminUseCase $isAdminUseCase;
+    
 
     /**
      * Constructor with dependency injection
@@ -97,22 +66,16 @@ class TaskController extends Controller
      * @param  IsAdminUseCase  $isAdminUseCase  Use case for checking admin privileges
      */
     public function __construct(
-        GetTasksUseCase $getTasksUseCase,
-        GetTaskUseCase $getTaskUseCase,
-        CreateTaskUseCase $createTaskUseCase,
-        UpdateTaskUseCase $updateTaskUseCase,
-        UpdateTaskStatusUseCase $updateTaskStatusUseCase,
-        DeleteTaskUseCase $deleteTaskUseCase,
-        IsAdminUseCase $isAdminUseCase,
-    ) {
-        $this->getTasksUseCase = $getTasksUseCase;
-        $this->getTaskUseCase = $getTaskUseCase;
-        $this->createTaskUseCase = $createTaskUseCase;
-        $this->updateTaskUseCase = $updateTaskUseCase;
-        $this->updateTaskStatusUseCase = $updateTaskStatusUseCase;
-        $this->deleteTaskUseCase = $deleteTaskUseCase;
-        $this->isAdminUseCase = $isAdminUseCase;
-    }
+        private readonly GetTasksUseCase $getTasksUseCase,
+        private readonly GetTaskUseCase $getTaskUseCase,
+        private readonly CreateTaskUseCase $createTaskUseCase,
+        private readonly UpdateTaskUseCase $updateTaskUseCase,
+        private readonly UpdateTaskStatusUseCase $updateTaskStatusUseCase,
+        private readonly DeleteTaskUseCase $deleteTaskUseCase,
+        private readonly IsAdminUseCase $isAdminUseCase,
+        private readonly GetTaskFiltersUseCase $getTaskFiltersUseCase,
+      
+    ) {}
 
     /**
      * List tasks with filtering and pagination
@@ -183,7 +146,16 @@ class TaskController extends Controller
                 'relatedModule' => $request->get('related_module'),
                 'relatedRecordId' => $this->parseIntOrNull($request->get('related_record_id')),
                 'search' => $request->get('search'),
+                'assignedTo' => $this->parseIntOrNull($request->get('assignedTo')),
             ];
+
+            $assignedTo = $filters['assignedTo'] ?? null;
+            $filterRequest = new GetTaskFiltersRequest(
+                currentUserId: $user->getId(),
+                requestedUserId: $assignedTo,
+                currentUserRoleId: $user->getRoleId(),  // Necesitas este método
+            );
+            $filterResponse = $this->getTaskFiltersUseCase->execute($filterRequest);
 
             // Extract pagination parameters with bounds checking
             $page = max(1, (int) $request->get('page', 1));
@@ -194,12 +166,14 @@ class TaskController extends Controller
                 userId: $user->getId(),
                 page: $page,
                 limit: $limit,
-                filters: array_filter($filters) // Remove null values
+                filters: array_filter($filters),
+                requestedUserId: $filterResponse->requestedUserId,
+                subordinateIds: $filterResponse->subordinateIds,
             );
 
             // Transform entities to DTOs for API response
             $taskDtos = array_map(
-                fn ($task) => $task instanceof TaskDto ? $task : TaskDto::fromEntity($task),
+                fn($task) => $task instanceof TaskDto ? $task : TaskDto::fromEntity($task),
                 $result['tasks']
             );
 
@@ -214,12 +188,12 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Database or infrastructure error (500 Internal Server Error)
             return response()->json([
-                'error' => 'Failed to retrieve tasks: '.$e->getMessage(),
+                'error' => 'Failed to retrieve tasks: ' . $e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500 Internal Server Error)
             return response()->json([
-                'error' => 'An unexpected error occurred: '.$e->getMessage(),
+                'error' => 'An unexpected error occurred: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -288,12 +262,12 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Database error (500 Internal Server Error)
             return response()->json([
-                'error' => 'Failed to retrieve task: '.$e->getMessage(),
+                'error' => 'Failed to retrieve task: ' . $e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: '.$e->getMessage(),
+                'error' => 'An unexpected error occurred: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -432,11 +406,11 @@ class TaskController extends Controller
             return response()->json(['error' => $e->getMessage()], 403);
         } catch (RuntimeException $e) {
             return response()->json([
-                'error' => 'Failed to create task: '.$e->getMessage(),
+                'error' => 'Failed to create task: ' . $e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'An unexpected error occurred: '.$e->getMessage(),
+                'error' => 'An unexpected error occurred: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -541,13 +515,7 @@ class TaskController extends Controller
                 sendNotification: $request->input('send_notification') ?? $request->input('sendNotification'),
             );
 
-            // Debug log para verificar
-            Log::info('UpdateTaskRequest created', [
-                'dueDate' => $updateRequest->dueDate,
-                'dateStart' => $updateRequest->dateStart,
-                'subject' => $updateRequest->subject,
-                'location' => $updateRequest->location,
-            ]);
+            
 
             // Execute use case: authorization + domain validation + persistence
             $success = $this->updateTaskUseCase->execute(
@@ -583,12 +551,12 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Persistence errors (500)
             return response()->json([
-                'error' => 'Failed to update task: '.$e->getMessage(),
+                'error' => 'Failed to update task: ' . $e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected errors (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: '.$e->getMessage(),
+                'error' => 'An unexpected error occurred: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -674,12 +642,12 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Persistence error (500)
             return response()->json([
-                'error' => 'Failed to update status: '.$e->getMessage(),
+                'error' => 'Failed to update status: ' . $e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: '.$e->getMessage(),
+                'error' => 'An unexpected error occurred: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -750,12 +718,12 @@ class TaskController extends Controller
         } catch (RuntimeException $e) {
             // Persistence error (500)
             return response()->json([
-                'error' => 'Failed to delete task: '.$e->getMessage(),
+                'error' => 'Failed to delete task: ' . $e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             // Unexpected error (500)
             return response()->json([
-                'error' => 'An unexpected error occurred: '.$e->getMessage(),
+                'error' => 'An unexpected error occurred: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -811,11 +779,11 @@ class TaskController extends Controller
             return response()->json(['error' => $e->getMessage()], 403);
         } catch (RuntimeException $e) {
             return response()->json([
-                'error' => 'Failed to restore task: '.$e->getMessage(),
+                'error' => 'Failed to restore task: ' . $e->getMessage(),
             ], 500);
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'An unexpected error occurred: '.$e->getMessage(),
+                'error' => 'An unexpected error occurred: ' . $e->getMessage(),
             ], 500);
         }
     }

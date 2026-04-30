@@ -104,16 +104,9 @@ class UpdateTaskData
        
         if ($request->dueDate !== null && $request->dueDate !== '') {
             $activityData['due_date'] = $request->dueDate;
-            Log::info('✅ dueDate MAPPED (direct access)', [
-                'request_dueDate' => $request->dueDate,
-                'activityData_due_date' => $activityData['due_date']
-            ]);
+            
         } else {
-            Log::warning('❌ dueDate NOT MAPPED (direct access)', [
-                'request_dueDate_is_null' => $request->dueDate === null,
-                'request_dueDate_is_empty' => $request->dueDate === '',
-                'request_dueDate_value' => $request->dueDate,
-            ]);
+            
         }
         
         // dateStart → date_start

@@ -132,11 +132,7 @@ class DuplicateQuoteUseCase
                 comment: "Quote duplicated to #{$newQuoteId}"
             );
         } catch (\Exception $e) {
-            Log::error('Failed to log quote duplication activity', [
-                'newQuoteId' => $newQuoteId,
-                'originalQuoteId' => $originalQuoteId,
-                'error' => $e->getMessage(),
-            ]);
+            //
         }
     }
 }

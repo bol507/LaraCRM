@@ -4,6 +4,7 @@ namespace App\Infrastructure\Mappers;
 
 use App\Models\VtigerUser;
 use App\Domain\Entities\User;
+use App\Infrastructure\Services\UserRoleDataService;
 
 /**
  * User Mapper
@@ -18,23 +19,23 @@ use App\Domain\Entities\User;
 class UserMapper
 {
 
-
-    public static function toDomain(VtigerUser $model): User
+    /**
+     *  Convert a VtigerUser entity to a User domain entity.
+     *
+     * @param VtigerUser $model
+     * @param array|null $roleData
+     * @return User
+     */
+    public static function toDomain(VtigerUser $model, ?array $roleData = null): User
     {
         $is_admin_raw = $model->is_admin ?? '0';
         $is_admin = in_array($is_admin_raw, ['1', 'on', 'yes', true, 1], true);
 
-        $roleData = \Illuminate\Support\Facades\DB::connection('vtiger')
-            ->table('vtiger_user2role')
-            ->join('vtiger_role', 'vtiger_user2role.roleid', '=', 'vtiger_role.roleid')
-            ->where('vtiger_user2role.userid', $model->id)
-            ->select('vtiger_role.roleid', 'vtiger_role.rolename')
-            ->first();
+        $roleData = $roleData ?? UserRoleDataService::fetchForUser($model->id);
 
-        $role_id = $roleData?->roleid ?? null;
-        $rolename = $roleData?->rolename ?? null;
-
-        $role = $is_admin ? 'Admin' : ($rolename ?? 'Usuario');
+        $legacyRole = $is_admin 
+            ? 'Admin' 
+            : ($roleData['rolename'] ?? 'Usuario');
         return new User(
             id: $model->id,
             userName: $model->user_name,
@@ -42,22 +43,50 @@ class UserMapper
             lastName: $model->last_name,
             email: $model->email1,
 
-            role: $role, //legacy
+            role: $legacyRole, //legacy
+
+            role_id: $roleData['role_id'],
+            rolename: $roleData['rolename'],
+            role_depth: $roleData['depth'],
+            role_parent: $roleData['parentrole'],
+            sharing_rule: $roleData['sharing_rule'],
 
             status: self::determineStatusFromModel($model),
             phoneCrm: $model->phone_crm_extension,
             department: $model->department,
             reportsToId: is_numeric($model->reports_to_id) ? (int) $model->reports_to_id : null,
             isActive: $model->status === 'Active',
-
             is_admin: $is_admin,
-            role_id: $role_id,
-            rolename: $rolename,
         );
     }
 
-    public static function fromDatabaseRow(object $row): User
+    /**
+     *  Convert a database row to a User domain entity.
+     *
+     * @param object $row
+     * @param array|null $roleData
+     * @return User
+     */
+    public static function fromDatabaseRow(object $row, ?array $roleData = null): User
     {
+        $is_admin_raw = $row->is_admin ?? '0';
+        $is_admin = in_array($is_admin_raw, ['1', 'on', 'yes', true, 1], true);
+
+        // Si no se proporciona roleData, intentar extraer de la row (si viene de un JOIN)
+        if (!$roleData) {
+            $roleData = [
+                'role_id' => $row->role_id ?? null,
+                'rolename' => $row->rolename ?? null,
+                'depth' => (int) ($row->role_depth ?? 0),
+                'parentrole' => $row->role_parent ?? null,
+                'sharing_rule' => (int) ($row->sharing_rule ?? 1),
+            ];
+        }
+
+        $legacyRole = $is_admin 
+            ? 'Admin' 
+            : ($roleData['rolename'] ?? 'Usuario');
+
         return User::fromArray([
             'id' => (int) $row->id,
             'user_name' => $row->user_name,
@@ -65,9 +94,14 @@ class UserMapper
             'last_name' => $row->last_name,
             'email' => $row->email1,
 
-            'is_admin' => in_array($row->is_admin ?? '0', ['1', 'on', 'yes', true, 1], true),
-            'role_id' => $row->role_id ?? null,
-            'rolename' => $row->rolename ?? null,
+            'is_admin' => $is_admin,
+            'role' => $legacyRole, // ⚠️ Legacy
+
+            'role_id' => $roleData['role_id'],
+            'rolename' => $roleData['rolename'],
+            'role_depth' => $roleData['depth'],
+            'role_parent' => $roleData['parentrole'],
+            'sharing_rule' => $roleData['sharing_rule'],
 
             'status' => self::determineStatusFromRow($row),
             'phone_crm' => $row->phone_crm ?? $row->phone_crm_extension ?? null,

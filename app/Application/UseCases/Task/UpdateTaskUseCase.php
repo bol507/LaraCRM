@@ -52,7 +52,6 @@ class UpdateTaskUseCase
 
         $task = $this->taskRepository->findById($taskId);
         if (! $task) {
-            Log::warning('Task not found', ['taskId' => $taskId]);
 
             return false;
         }
@@ -73,11 +72,7 @@ class UpdateTaskUseCase
             return true;
         }
 
-        Log::info('=== Task Update Debug ===', [
-            'taskId' => $taskId,
-            'activityData' => $updateData->getActivityData(),
-            'crmentityData' => $updateData->getCrmentityData(),
-        ]);
+        
 
         // Orquestar actualización en transacción
         DB::connection('vtiger')->transaction(function () use ($taskId, $updateData, $userId) {
@@ -107,11 +102,7 @@ class UpdateTaskUseCase
             }
         });
 
-        Log::info("Task {$taskId} updated successfully", [
-            'task_id' => $taskId,
-            'updated_by' => $userId,
-            'timestamp' => now()->toDateTimeString(),
-        ]);
+        
 
         $this->logActivity($taskId, $userId);
 

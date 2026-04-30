@@ -353,7 +353,6 @@ class DeleteCommentUseCase
      * @example
      * // In a scheduled job (e.g., daily cleanup)
      * $deletedCount = $useCase->cleanupPermanently(olderThanDays: 30);
-     * Log::info("Permanently deleted {$deletedCount} old comments");
      */
     public function cleanupPermanently(?int $olderThanDays = null): int
     {

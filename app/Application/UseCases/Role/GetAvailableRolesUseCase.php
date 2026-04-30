@@ -13,7 +13,7 @@ class GetAvailableRolesUseCase
     ){}
     
     /**
-     * @return array<RoleOptionResponse>
+     * @return array
      */
     public function execute(): array
     {

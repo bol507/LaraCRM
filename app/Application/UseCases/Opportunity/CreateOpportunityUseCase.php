@@ -108,10 +108,7 @@ class CreateOpportunityUseCase
                 userId: $userId
             );
         } catch (\Exception $e) {
-            Log::error('Failed to log activity', [
-                'opportunityId' => $opportunityId,
-                'error' => $e->getMessage(),
-            ]);
+            //
         }
     }
 }

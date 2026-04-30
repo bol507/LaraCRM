@@ -2,6 +2,8 @@
 
 namespace App\Application\Repositories;
 
+use App\Domain\Entities\CrmEntity;
+
 interface CrmentityRepositoryInterface
 {
 
@@ -24,13 +26,40 @@ interface CrmentityRepositoryInterface
     public function insert(array $data): int;
 
     /**
-     * Update an existing crmentity record
+     * Update an existing crmentity record using raw array
+     *
+     * Ideal for partial updates (PATCH semantics) where only changed fields are provided.
+     * The repository handles sanitization of immutable fields and audit timestamps.
      *
      * @param  int  $crmid  The entity ID to update
-     * @param  array  $data  Fields to update (excluding managed fields)
+     * @param  array<string, mixed>  $data  Fields to update (only provided fields will be updated)
      * @return bool True if rows were affected
+     * 
+     * @example
+     * // Update only label and owner
+     * $repo->update(123, [
+     *     'label' => 'Nuevo título',
+     *     'smownerid' => 456,
+     * ]);
      */
     public function update(int $crmid, array $data): bool;
+
+    /**
+     * Update an existing crmentity record using a Domain Entity
+     * 
+     * Ideal for full entity updates where you have a complete CrmEntity instance.
+     * Provides type-safety and ensures all entity invariants are respected.
+     *
+     * @param CrmEntity $entity The entity with updated values
+     * @return bool True if rows were affected
+     * 
+     * @example
+     * // Update with full entity
+     * $entity = new CrmEntity(...);
+     * $repo->updateFromEntity($entity);
+     */
+    public function updateFromEntity(CrmEntity $entity): bool;
+
     /**
      * Soft delete an entity
      * @param  int  $crmid  The entity ID to update
@@ -46,9 +75,9 @@ interface CrmentityRepositoryInterface
     /**
      * Get entity metadata by crmid
      */
-    public function findById(int $crmid): ?array;
+    public function findById(int $crmid): ?CrmEntity;
 
-    
+
 
     /**
      * Update only the label field for an entity

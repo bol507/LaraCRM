@@ -72,54 +72,54 @@ class GetTasksUseCase
      *     filters: ['status' => ['In Progress'], 'priority' => ['High']]
      * );
      */
-    public function execute(int $userId, int $page = 1, int $limit = 50, array $filters = []): array
-    {
+    public function execute(
+        int $userId,
+        int $page = 1,
+        int $limit = 50,
+        array $filters = [],
+        ?int $requestedUserId = null,
+        array $subordinateIds = []
+    ): array {
         // Validate input parameters
-        if ($userId <= 0) {
-            throw new InvalidArgumentException("User ID must be positive, got {$userId}");
-        }
-        if ($page < 1) {
-            throw new InvalidArgumentException("Page must be at least 1, got {$page}");
-        }
-        if ($limit < 1 || $limit > 100) {
-            throw new InvalidArgumentException("Limit must be between 1 and 100, got {$limit}");
-        }
+        if ($userId <= 0) throw new InvalidArgumentException("User ID must be positive, got {$userId}");
+        if ($page < 1) throw new InvalidArgumentException("Page must be at least 1, got {$page}");
+        if ($limit < 1 || $limit > 100) throw new InvalidArgumentException("Limit must be between 1 and 100, got {$limit}");
 
         // Calculate offset from page number
         $offset = ($page - 1) * $limit;
+        $allowedOwnerIds = array_values(array_unique(array_merge([$userId], $subordinateIds)));
 
-
-        $result = $this->taskRepository->findByUserId($userId, $limit, $filters, $offset);
+        $result = $this->taskRepository->findTasksByOwnerIds($allowedOwnerIds, $limit, $filters, $offset);
 
 
         if (isset($result['tasks']) && is_array($result['tasks'])) {
-        // Estructura correcta: ['tasks' => [...], 'pagination' => [...]]
-        $tasks = $result['tasks'];
-        $pagination = $result['pagination'] ?? [];
-    } elseif (is_array($result) && !empty($result) && array_keys($result)[0] === 0) {
-        // Repository retorna array directo de Tasks
-        $tasks = $result;
-        $pagination = [
-            'current_page' => $page,
-            'per_page' => $limit,
-            'total' => count($result),
-            'total_pages' => ceil(count($result) / $limit),
-        ];
-    } else {
-        // Caso inesperado: inicializar array vacío
-        $tasks = [];
-        $pagination = [
-            'current_page' => $page,
-            'per_page' => $limit,
-            'total' => 0,
-            'total_pages' => 0,
-        ];
-    }
+            // Estructura correcta: ['tasks' => [...], 'pagination' => [...]]
+            $tasks = $result['tasks'];
+            $pagination = $result['pagination'] ?? [];
+        } elseif (is_array($result) && !empty($result) && array_keys($result)[0] === 0) {
+            // Repository retorna array directo de Tasks
+            $tasks = $result;
+            $pagination = [
+                'current_page' => $page,
+                'per_page' => $limit,
+                'total' => count($result),
+                'total_pages' => ceil(count($result) / $limit),
+            ];
+        } else {
+            // Caso inesperado: inicializar array vacío
+            $tasks = [];
+            $pagination = [
+                'current_page' => $page,
+                'per_page' => $limit,
+                'total' => 0,
+                'total_pages' => 0,
+            ];
+        }
 
 
-        
+
         if (!is_array($tasks)) {
-            
+
             $tasks = $tasks instanceof Task ? [$tasks] : [];
         }
 
@@ -138,8 +138,8 @@ class GetTasksUseCase
             );
         }, $tasks);
 
-        $stats = $this->taskRepository->calculateStats($userId, $filters);
-        
+        $stats = $this->taskRepository->calculateStats($allowedOwnerIds, $filters);
+
         return [
             'tasks' => $taskDtos,
             'pagination' => $pagination,
@@ -173,22 +173,22 @@ class GetTasksUseCase
     }
 
     /**
-     * Get task statistics for a user
-     * 
-     * @param int $userId User ID to get stats for
-     * @param array $filters Optional filters to apply
-     * @return array{total: int, completed: int, pending: int, overdue: int, highPriority: int}
-     * 
-     * @example
-     * $stats = $useCase->getStats(userId: 5);
-     * echo "Pending tasks: {$stats['pending']}";
+     * Retrieves task statistics for a user and their subordinates
+     *
+     * @param int $userId The ID of the main user
+     * @param array $subordinateIds List of subordinate user IDs
+     * @param array $filters Additional filters (status, priority, search terms, etc.)
+     * @return array Task statistics from calculateStats method
+     * @throws InvalidArgumentException If userId is not positive
      */
-    public function getStats(int $userId, array $filters = []): array
+    public function getStats(int $userId, array $subordinateIds = [], array $filters = []): array
     {
         if ($userId <= 0) {
             throw new InvalidArgumentException("User ID must be positive, got {$userId}");
         }
 
-        return $this->taskRepository->calculateStats($userId, $filters);
+        $allowedOwnerIds = array_values(array_unique(array_merge([$userId], $subordinateIds)));
+
+        return $this->taskRepository->calculateStats($allowedOwnerIds, $filters);
     }
 }

@@ -29,14 +29,7 @@ class GetDashboardTasksUseCase
         try {
             $tasks = $this->taskRepository->findAllDashboardTasks($userId, $limit);
         } catch (\Throwable $e) {
-            Log::error('UseCase: Error en findAllDashboardTasks', [
-                'user_id' => $userId,
-                'limit' => $limit,
-                'error_class' => get_class($e),
-                'error_message' => $e->getMessage(),
-                'error_file' => $e->getFile(),
-                'error_line' => $e->getLine(),
-            ]);
+            
             throw new \RuntimeException(
                 'Failed to fetch tasks: ' . $e->getMessage(),
                 previous: $e
@@ -47,13 +40,7 @@ class GetDashboardTasksUseCase
         try {
             $stats = $this->taskRepository->getStatistics($userId);
         } catch (\Throwable $e) {
-            Log::error('UseCase: Error en getStatistics', [
-                'user_id' => $userId,
-                'error_class' => get_class($e),
-                'error_message' => $e->getMessage(),
-                'error_file' => $e->getFile(),
-                'error_line' => $e->getLine(),
-            ]);
+            
 
             $stats = [];
         }
@@ -63,11 +50,7 @@ class GetDashboardTasksUseCase
             $taskDtos = array_map(function ($task) {
                 
                 if (!$task instanceof Task) {
-                    Log::warning('UseCase: Task no es instancia de Task entity', [
-                        'task_type' => gettype($task),
-                        'task_class' => is_object($task) ? get_class($task) : null,
-                    ]);
-                    return null;
+                    
                 }
                 return TaskDto::fromEntity($task);
             }, $tasks);
@@ -75,13 +58,7 @@ class GetDashboardTasksUseCase
             
             $taskDtos = array_filter($taskDtos, fn($dto) => $dto !== null);
         } catch (\Throwable $e) {
-            Log::error('UseCase: Error en mapeo de DTOs', [
-                'tasks_count' => is_array($tasks) ? count($tasks) : 0,
-                'error_class' => get_class($e),
-                'error_message' => $e->getMessage(),
-                'error_file' => $e->getFile(),
-                'error_line' => $e->getLine(),
-            ]);
+            
             throw new \RuntimeException(
                 'Failed to map tasks to DTOs: ' . $e->getMessage(),
                 previous: $e

@@ -47,11 +47,11 @@ interface CommentRepositoryInterface
      * 
      * @param int $commentId Unique identifier of the comment
      * 
-     * @return Comment|null Comment entity if found, null if not exists or deleted
+     * @return object|null Comment entity if found, null if not exists or deleted
      * 
      * @throws \RuntimeException If database query fails
      */
-    public function findById(int $commentId): ?Comment;
+    public function findById(int $commentId): ?object;
 
     /**
      * Create a new comment
@@ -130,4 +130,28 @@ interface CommentRepositoryInterface
      * @return bool True if user can view the comment, false otherwise
      */
     public function canAccess(int $commentId, int $userId): bool;
+
+    /**
+     * Find a comment including soft-deleted ones
+     * 
+     * @param int $commentId The comment ID to find
+     * @return Comment|null The comment entity or null if not found
+     */
+    public function findByIdIncludingDeleted(int $commentId): ?Comment;
+    
+    /**
+     * Restore a soft-deleted comment
+     * 
+     * @param int $commentId The comment ID to restore
+     * @return bool True if restore was successful
+     */
+    public function restore(int $commentId): bool;
+    
+    /**
+     * Permanently delete soft-deleted comments older than a retention period
+     * 
+     * @param int $olderThanDays Only delete comments soft-deleted more than this many days ago
+     * @return int Number of comments permanently deleted
+     */
+    public function deletePermanently(int $olderThanDays): int;
 }

@@ -6,6 +6,7 @@ use App\Application\DTOs\Task\CreateTaskRequest;
 use App\Application\DTOs\Task\UpdateTaskData;
 use App\Application\DTOs\Task\UpdateTaskStatusRequest;
 use App\Application\Repositories\TaskRepositoryInterface;
+use App\Domain\Entities\Activity;
 use App\Domain\Entities\Task;
 use App\Infrastructure\Mappers\TaskMapper;
 use App\Infrastructure\Repositories\Core\ActivityRepository;
@@ -136,7 +137,9 @@ class VtigerTaskRepository implements TaskRepositoryInterface
         int $userId,
         int $limit = 50,
         array $filters = [],
-        int $offset = 0
+        int $offset = 0,
+        ?int $requestedUserId = null,
+        array $subordinateIds = []
     ): array {
         if ($userId <= 0) {
             throw new InvalidArgumentException("User ID must be positive, got {$userId}");
@@ -156,9 +159,20 @@ class VtigerTaskRepository implements TaskRepositoryInterface
                 ->leftJoin('vtiger_users', 'vtiger_crmentity.smownerid', '=', 'vtiger_users.id')
                 ->where('vtiger_crmentity.deleted', 0)
                 ->where('vtiger_activity.activitytype', 'Task')
-                ->where(function ($q) use ($userId) {
-                    $q->where('vtiger_crmentity.smownerid', $userId)
-                        ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+                ->where(function ($q) use ($userId, $requestedUserId, $subordinateIds) {
+                    if ($requestedUserId !== null) {
+                        // requested user is the creator
+                        $q->where('vtiger_crmentity.smownerid', $requestedUserId);
+                    } elseif (!empty($subordinateIds)) {
+                        // requested user is a subordinate
+                        $q->where(function ($inner) use ($userId, $subordinateIds) {
+                            $inner->whereIn('vtiger_crmentity.smownerid', array_merge([$userId], $subordinateIds));
+                        });
+                    } else {
+                        // requested user is an assignee
+                        $q->where('vtiger_crmentity.smownerid', $userId)
+                            ->orWhere('vtiger_crmentity.smcreatorid', $userId);
+                    }
                 });
 
             $this->applyFilters($query, $filters);
@@ -404,6 +418,57 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     }
 
     /**
+     * @inheritDoc
+     */
+    public function findTasksByOwnerIds(array $ownerIds, int $limit, array $filters, int $offset): array
+    {
+
+        if (empty($ownerIds)) return ['tasks' => [], 'pagination' => []];
+
+        $query = DB::connection('vtiger')
+            ->table('vtiger_activity')
+            ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
+            ->leftJoin('vtiger_users', 'vtiger_crmentity.smownerid', '=', 'vtiger_users.id')
+            ->whereIn('vtiger_crmentity.smownerid', $ownerIds)
+            ->where('vtiger_crmentity.deleted', 0)
+            ->where('vtiger_activity.activitytype', 'Task')
+            ->select(
+                'vtiger_activity.*',
+                'vtiger_crmentity.smownerid',
+                'vtiger_crmentity.createdtime',
+                'vtiger_crmentity.modifiedtime',
+                'vtiger_users.user_name'
+            )
+            ->limit($limit)
+            ->offset($offset);
+
+        // Apply additional filters (status, priority, search, etc.)
+        // ... (your existing filter logic) ...
+
+        $results = $query->get();
+        $activities = $results->map(fn($row) => Activity::fromArray($row))->toArray();
+
+        // Count total for pagination (without limit/offset)
+        $total = DB::connection('vtiger')
+            ->table('vtiger_activity')
+            ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
+            ->whereIn('vtiger_crmentity.smownerid', $ownerIds)
+            ->where('vtiger_crmentity.deleted', 0)
+            ->where('vtiger_activity.activitytype', 'Task')
+            ->count();
+
+        return [
+            'activities' => $activities,
+            'pagination' => [
+                'total' => $total,
+                'per_page' => $limit,
+                'current_page' => ($offset / $limit) + 1,
+                'total_pages' => ceil($total / $limit),
+            ]
+        ];
+    }
+
+    /**
      * {@inheritDoc}
      * 
      * Creates a new Task entity by orchestrating:
@@ -528,27 +593,27 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             // ✅ Update vtiger_activity (delegated to core repo)
             if (!empty($data->getActivityData())) {
                 $activityData = $data->getActivityData();
-                
+
                 // Remove managed field to let repo handle timestamps
                 unset($activityData['modifiedtime']);
-                
+
                 $activityUpdated = $this->activity->update($taskId, $activityData);
-                
+
                 if (!$activityUpdated) {
                     throw new RuntimeException("Failed to update vtiger_activity for task {$taskId}");
                 }
-                
+
                 $updated = true;
             }
 
             // ✅ Update vtiger_crmentity (delegated to core repo)
             if (!empty($data->getCrmentityData())) {
                 $crmentityUpdated = $this->crmentity->update($taskId, $data->getCrmentityData());
-                
+
                 if (!$crmentityUpdated) {
                     throw new RuntimeException("Failed to update vtiger_crmentity for task {$taskId}");
                 }
-                
+
                 $updated = true;
             }
 
@@ -557,7 +622,7 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             $subjectForLabel = $data->getSubjectForLabelSync();
             if ($subjectForLabel !== null) {
                 $labelSynced = $this->crmentity->updateLabel($taskId, trim($subjectForLabel));
-                
+
                 if (!$labelSynced) {
                     Log::warning("Failed to sync label for task {$taskId}", [
                         'subject' => $subjectForLabel,
@@ -575,18 +640,16 @@ class VtigerTaskRepository implements TaskRepositoryInterface
             }
 
             return true;
-            
         } catch (InvalidArgumentException $e) {
             // Re-throw validation errors as-is
             throw $e;
-            
         } catch (\Exception $e) {
             Log::error("Failed to update task {$taskId}: " . $e->getMessage(), [
                 'task_id' => $taskId,
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
-            
+
             throw new RuntimeException(
                 "Failed to update task {$taskId}: " . $e->getMessage(),
                 previous: $e
@@ -1137,17 +1200,19 @@ class VtigerTaskRepository implements TaskRepositoryInterface
     /**
      * {@inheritDoc}
      */
-    public function calculateStats(int $userId, array $filters = []): array
+    public function calculateStats(array $ownerIds, array $filters = []): array
     {
+        if (empty($ownerIds)) return ['total' => 0, 'completed' => 0, 'pending' => 0, 'overdue' => 0, 'highPriority' => 0];
         $baseQuery = DB::connection('vtiger')
             ->table('vtiger_activity')
             ->join('vtiger_crmentity', 'vtiger_activity.activityid', '=', 'vtiger_crmentity.crmid')
+            ->whereIn('vtiger_crmentity.smownerid', $ownerIds)
             ->where('vtiger_crmentity.deleted', 0)
-            ->where('vtiger_activity.activitytype', 'Task')
-            ->where(function ($q) use ($userId) {
+            ->where('vtiger_activity.activitytype', 'Task');
+        /*->where(function ($q) use ($userId) {
                 $q->where('vtiger_crmentity.smownerid', $userId)
                     ->orWhere('vtiger_crmentity.smcreatorid', $userId);
-            });
+            });*/
 
         $this->applyFilters($baseQuery, $filters);
 

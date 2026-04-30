@@ -58,8 +58,7 @@ class CurrentUserService
             return $userId;
             
         } catch (\Throwable $e) {
-            // Log error if needed
-            // \Illuminate\Support\Facades\Log::debug('CurrentUserService error', ['error' => $e->getMessage()]);
+            
             
             self::$cachedValid = false;
             return null;

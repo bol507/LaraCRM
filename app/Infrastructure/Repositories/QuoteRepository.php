@@ -55,11 +55,7 @@ class QuoteRepository implements QuoteRepositoryInterface
 
         $itbms = $subtotal * self::TAX;
         $totalWithTax = $subtotal + $itbms;
-        Log::info('Quote total with tax', [
-            'subtotal' => $subtotal,
-            'itbms' => $itbms,
-            'totalWithTax' => $totalWithTax,
-        ]);
+        
 
         DB::connection(self::CONNECTION)->transaction(function () use ($request, $createdByUserId, $quoteId, $subtotal, $totalWithTax, $itbms, $itemsWithTotals) {
             // Insert into vtiger_quotes

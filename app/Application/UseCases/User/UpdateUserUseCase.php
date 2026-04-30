@@ -2,11 +2,15 @@
 
 namespace App\Application\UseCases\User;
 
+use App\Application\DTOs\Role\AssignRoleRequest;
 use App\Application\DTOs\User\UpdateUserRequest;
 use App\Application\Repositories\UserRepositoryInterface;
-use App\Application\Repositories\UserRoleAssignmentRepositoryInterface;
+use App\Application\UseCases\Core\Entity\UpdateEntityUseCase;
+use App\Application\UseCases\Role\AssignUserRoleUseCase;
 use App\Domain\Entities\User;
+use App\Infrastructure\Services\UserRoleDataService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -20,7 +24,8 @@ class UpdateUserUseCase
 
     public function __construct(
         private readonly UserRepositoryInterface $userRepository,
-        private readonly UserRoleAssignmentRepositoryInterface $roleAssignmentRepository,
+        private readonly AssignUserRoleUseCase $assignUserRoleUseCase,
+        private readonly UpdateEntityUseCase $updateEntityUseCase,
     ) {}
 
     /**
@@ -36,80 +41,87 @@ class UpdateUserUseCase
      */
     public function execute(int $userId, UpdateUserRequest $request, int $authenticatedUserId): User
     {
-
         $existingUser = $this->userRepository->findById($userId);
         if (!$existingUser) {
             throw new RuntimeException("User with ID {$userId} not found");
         }
 
-
         $this->validateBusinessRules($existingUser, $request, $authenticatedUserId);
 
-
+        // Wrap all operations in a single transaction
         return DB::connection('vtiger')->transaction(function () use (
-            $userId, 
-            $request, 
-            $existingUser, 
+            $userId,
+            $request,
+            $existingUser,
             $authenticatedUserId
         ): User {
-
-            $now = now()->format('Y-m-d H:i:s');
             $updatable = $request->toUpdatableArray();
 
-            // update password
+            // Update password (if provided) - with error handling
             if (!empty($updatable['password'])) {
-                $hashedPassword = password_hash($updatable['password'], PASSWORD_DEFAULT);
-
-                DB::connection('vtiger')
-                    ->table('vtiger_users')
-                    ->where('id', $userId)
-                    ->update([
-                        'user_password' => $hashedPassword,
-                        'confirm_password' => $hashedPassword,
-                        'crypt_type' => 'PHASH',
-                        'date_modified' => $now,
-                        'modified_user_id' => $authenticatedUserId,
-                    ]);
-
+                $passwordChanged = $this->userRepository->changePassword(
+                    $userId, 
+                    $updatable['password'], 
+                    $authenticatedUserId
+                );
+                
+                if (!$passwordChanged) {
+                    throw new RuntimeException("Failed to update password for user {$userId}");
+                }
                 unset($updatable['password']);
             }
 
-            // update other fields  
+            // Update other user fields (if any)
             if (!empty($updatable)) {
-                DB::connection('vtiger')
-                    ->table('vtiger_users')
-                    ->where('id', $userId)
-                    ->update([
-                        ...$updatable,
-                        'date_modified' => $now,
-                        'modified_user_id' => $authenticatedUserId,
-                    ]);
-            }
-            
-            // update role
-            if ($request->role_id !== null) {
-                DB::connection('vtiger')->table('vtiger_user2role')->updateOrInsert(
-                    ['userid' => $userId],
-                    ['roleid' => $request->role_id]
-                );
+                $updated = $this->userRepository->update($userId, $updatable, $authenticatedUserId);
+                if (!$updated) {
+                    throw new RuntimeException("Failed to update user fields for user {$userId}");
+                }
             }
 
-            // update user name and email
+            // Update role (if provided) - delegated to specialized use case
+            if ($request->role_id !== null) {
+                try {
+                    $this->assignUserRoleUseCase->execute(
+                        AssignRoleRequest::fromArray([
+                            'user_id' => $userId,
+                            'role_id' => $request->role_id,
+                        ])
+                    );
+                    UserRoleDataService::clearCache($userId);
+                } catch (\Exception $e) {
+                    throw new RuntimeException(
+                        "Failed to assign role {$request->role_id} to user {$userId}: " . $e->getMessage(),
+                        0,
+                        $e
+                    );
+                }
+            }
+
+            // Update crmentity label for global search (if name or email changed)
             if (!empty($updatable['user_name']) || !empty($updatable['email1'])) {
                 $label = $updatable['user_name'] ?? $existingUser->getUserName();
-                DB::connection('vtiger')
-                    ->table('vtiger_crmentity')
-                    ->where('crmid', $userId)
-                    ->update([
-                        'label' => substr($label, 0, 100),
-                        'modifiedtime' => $now,
+                $label = substr($label, 0, 100);
+                
+                try {
+                    $this->updateEntityUseCase->execute($userId, [
+                        'label' => $label,
+                    ], $authenticatedUserId);
+                } catch (\Exception $e) {
+                    // Log but don't fail the whole update if crmentity fails (non-critical)
+                    Log::warning('Failed to update crmentity label', [
+                        'user_id' => $userId,
+                        'error' => $e->getMessage()
                     ]);
+                }
             }
 
-            
+            $updatedUser = $this->userRepository->findById($userId);
+            if (!$updatedUser) {
+                throw new RuntimeException("Failed to retrieve updated user {$userId}");
+            }
 
-            return $this->userRepository->findById($userId)
-                ?? throw new RuntimeException("Failed to retrieve updated user");
+            return $updatedUser;
         });
     }
 
@@ -127,7 +139,7 @@ class UpdateUserUseCase
 
         // Do not allow changing email to an existing one
         if (
-            $request->email !== null 
+            $request->email !== null
             && $request->email !== $existing->getEmail()
             && !$this->isGenericEmail($request->email)
         ) {
@@ -152,9 +164,8 @@ class UpdateUserUseCase
      */
     private function isAllowedToAssignAdmin(int $authId, int $targetUserId): bool
     {
-        // Un admin puede asignar admin a otros, o un usuario puede auto-asignarse (si ya es admin)
+        // An admin can assign admin to others, or a user can self-assign (if already admin)
         $authUser = $this->userRepository->findById($authId);
         return $authUser?->isAdmin() ?? false;
     }
-
 }

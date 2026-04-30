@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Application\Contracts\ActivityTrackerInterface;
 use App\Application\Contracts\GoogleDriveServiceInterface;
 use App\Application\Repositories\ActivityLogRepositoryInterface;
+use App\Application\Repositories\ActivityRepositoryInterface;
 use App\Application\Repositories\AttachmentRepositoryInterface;
 use App\Application\Repositories\ClientRepositoryInterface;
 use App\Application\Repositories\CommentRepositoryInterface;
@@ -12,10 +13,14 @@ use App\Application\Repositories\ContactRepositoryInterface;
 use App\Application\Repositories\CrmentityRepositoryInterface;
 use App\Application\Repositories\DashboardRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
+use App\Application\Repositories\ModuleRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
+use App\Application\Repositories\PasswordResetRepositoryInterface;
+use App\Application\Repositories\ProfileRepositoryInterface;
 use App\Application\Repositories\ProjectRepositoryInterface;
 use App\Application\Repositories\PurchaseRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
+use App\Application\Repositories\RoleProfileAssignmentRepositoryInterface;
 use App\Application\Repositories\RoleRepositoryInterface;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
@@ -32,11 +37,15 @@ use App\Infrastructure\Repositories\ContactRepository;
 use App\Infrastructure\Repositories\Core\ActivityRepository;
 use App\Infrastructure\Repositories\Core\CrmentityRepository;
 use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
+use App\Infrastructure\Repositories\Core\ModuleRepository;
 use App\Infrastructure\Repositories\Core\SeActivityRelRepository;
+use App\Infrastructure\Repositories\PasswordResetRepository;
 use App\Infrastructure\Repositories\PotentialRepository;
+use App\Infrastructure\Repositories\ProfileRepository;
 use App\Infrastructure\Repositories\ProjectRepository;
 use App\Infrastructure\Repositories\PurchaseRepository;
 use App\Infrastructure\Repositories\QuoteRepository;
+use App\Infrastructure\Repositories\RoleProfileAssignmentRepository;
 use App\Infrastructure\Repositories\RoleRepository;
 use App\Infrastructure\Repositories\ShippingAddressRepository;
 use App\Infrastructure\Repositories\UserRoleAssignmentRepository;
@@ -47,6 +56,8 @@ use App\Infrastructure\Repositories\VtigerDashboardRepository;
 use App\Infrastructure\Repositories\VtigerGeneralConditionsRepository;
 use App\Infrastructure\Repositories\VtigerTaskRepository;
 use App\Infrastructure\Repositories\VtigerUserRepository;
+use App\Infrastructure\Services\PasswordVerifier;
+use App\Infrastructure\Services\ProfilePermissionService;
 use App\Services\ActivityTrackerWrapper;
 use App\Services\GoogleDrive\GoogleDriveFactory;
 use App\Services\JwtService;
@@ -59,17 +70,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        
+
 
         // Core repositories (singleton - shared across all use cases)
         $this->app->singleton(
             CrmentityRepositoryInterface::class,
             CrmentityRepository::class
         );
-        $this->app->singleton(ActivityRepository::class);
+        
         $this->app->singleton(SeActivityRelRepository::class);
         $this->app->singleton(
-            IdGeneratorRepository::class, 
+            IdGeneratorRepository::class,
             fn() => new IdGeneratorRepository(connection: 'vtiger')
         );
 
@@ -91,8 +102,6 @@ class AppServiceProvider extends ServiceProvider
 
         $this->registerServices();
         $this->registerRepositories();
-        
-
     }
 
     /**
@@ -185,8 +194,30 @@ class AppServiceProvider extends ServiceProvider
             UserRoleAssignmentRepositoryInterface::class,
             UserRoleAssignmentRepository::class
         );
-        
+        // RoleProfileAssignmentRepository
+        $this->app->bind(
+            RoleProfileAssignmentRepositoryInterface::class,
+            RoleProfileAssignmentRepository::class
+        );
+        // ProfileRepository
+        $this->app->bind(
+            ProfileRepositoryInterface::class,
+            ProfileRepository::class
+        );
 
+        // PasswordResetRepository
+        $this->app->bind(
+            PasswordResetRepositoryInterface::class,
+            PasswordResetRepository::class
+        );
+
+        // ModuleRepository
+        $this->app->bind(
+            ModuleRepositoryInterface::class,
+            ModuleRepository::class
+        );
+
+       
     }
 
     private function registerServices(): void
@@ -200,9 +231,16 @@ class AppServiceProvider extends ServiceProvider
             ActivityTrackerInterface::class,
             ActivityTrackerWrapper::class
         );
+        $this->app->singleton(
+            ActivityRepositoryInterface::class,
+            ActivityRepository::class
+        );
         // Google Drive
         $this->app->singleton(GoogleDriveServiceInterface::class, function ($app) {
             return GoogleDriveFactory::create();
         });
+
+        $this->app->singleton(PasswordVerifier::class);
+        $this->app->singleton(ProfilePermissionService::class);
     }
 }

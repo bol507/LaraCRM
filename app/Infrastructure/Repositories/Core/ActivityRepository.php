@@ -2,20 +2,29 @@
 
 namespace App\Infrastructure\Repositories\Core;
 
+use App\Application\Repositories\ActivityRepositoryInterface;
+use App\Domain\Entities\Activity;
+use App\Infrastructure\Mappers\ActivityMapper;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * Repository for vtiger_activity table
  *
  * Handles task/event scheduling data in Vtiger
  */
-class ActivityRepository
+class ActivityRepository implements ActivityRepositoryInterface
 {
-    private const TABLE = 'vtiger_activity';
+    protected const CONNECTION = 'vtiger';
+    protected const ACTIVITY_TABLE = 'vtiger_activity';
 
-    public function __construct(
-        private readonly string $connection = 'vtiger'
-    ) {}
+    public function query(): \Illuminate\Database\Query\Builder
+    {
+        return DB::connection(self::CONNECTION)->table(self::ACTIVITY_TABLE);
+    }
+
 
     /**
      * Insert a new activity record
@@ -41,12 +50,13 @@ class ActivityRepository
      */
     public function insert(array $data): int
     {
-        DB::connection($this->connection)
-            ->table(self::TABLE)
+        $this->query()
             ->insert($this->prepareData($data));
 
-        return $data['activityid'];
+        return (int) $data['activityid'];
     }
+
+    
 
     /**
      * Update an existing activity
@@ -67,32 +77,21 @@ class ActivityRepository
         $sanitized = array_diff_key($data, [
             'modifiedtime' => true,  // Repo manages timestamps
             'activityid' => true,    // Primary key should not be updated
+            'description' => true,   // Description is crmentity.description
         ]);
 
         if (empty($sanitized)) {
             return true; // Nothing left to update after sanitization
         }
 
-        $affected = DB::connection($this->connection)
-            ->table(self::TABLE)
+        $affected = $this->query()
             ->where('activityid', $activityId)
             ->update($sanitized);
 
         return $affected > 0;
     }
 
-    /**
-     * Find activity by ID
-     */
-    public function findById(int $activityId): ?array
-    {
-        $result = DB::connection($this->connection)
-            ->table(self::TABLE)
-            ->where('activityid', $activityId)
-            ->first();
 
-        return $result ? (array) $result : null;
-    }
 
     /**
      * Prepare data with Vtiger defaults
@@ -120,5 +119,207 @@ class ActivityRepository
             'recurringtype' => $data['recurringtype'] ?? '',
             'semodule' => $data['semodule'] ?? 'Calendar',
         ];
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function findById(int $activityId): ?object
+    {
+        if ($activityId <= 0) {
+            throw new InvalidArgumentException("Activity ID must be positive, got {$activityId}");
+        }
+
+        try {
+            // 1. Use the mapper to prepare the query with correct joins and selects
+            $query = ActivityMapper::prepareQuery(
+                DB::connection(self::CONNECTION)->query(),
+                [] // No additional selects needed for findById
+            );
+
+            // 2. Filter by activityid and execute (first() for a single record)
+            $row = $query
+                ->where('act.activityid', $activityId)
+                ->first();
+
+            return $row;
+        } catch (\Exception $e) {
+            throw new RuntimeException(
+                "Failed to retrieve activity {$activityId}: " . $e->getMessage(),
+                previous: $e
+            );
+        }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function findTasksByOwnerIds(?array $ownerIds, int $limit, array $filters, int $offset): array
+    {
+        $isGlobalView = $ownerIds === null;
+
+        if (!$isGlobalView && empty($ownerIds)) {
+            return ['tasks' => [], 'pagination' => []];
+        }
+
+        // 1. Use ActivityMapper::prepareQuery() for the base with joins and selects
+        $query = ActivityMapper::prepareQuery(
+            DB::connection(self::CONNECTION)->query(),
+            [] // Additional selects if needed
+        );
+        if (!$isGlobalView) {
+            $query->whereIn('crm.smownerid', $ownerIds);
+        }
+
+        // 2. Apply filters specific to this query
+        $query->where('act.activitytype', 'Task')
+            ->where('crm.deleted', 0)
+            ->orderBy('act.date_start', 'DESC')
+            ->orderBy('crm.createdtime', 'DESC')
+            ->limit($limit)
+            ->offset($offset);
+
+        // 3. Apply additional filters (status, priority, search, etc.)
+        $this->applyFilters($query, $filters);
+
+        // 4. Execute and map using ActivityMapper::toEntities()
+        $results = $query->get();
+
+
+
+       
+
+        // 5. Count total for pagination (reuse the same query logic)
+        $totalQuery = ActivityMapper::prepareQuery(
+            DB::connection(self::CONNECTION)->query(),
+            []
+        );
+        if (!$isGlobalView) {
+            $totalQuery->whereIn('crm.smownerid', $ownerIds);
+        }
+
+        $totalQuery->where('act.activitytype', 'Task')
+            ->where('crm.deleted', 0);
+        $this->applyFilters($totalQuery, $filters);
+        $total = $totalQuery->count();
+
+        // Return Collection of stdClass with all fields (usecase mapping to DTO)
+        return [
+            'activities' => $results->all(),
+            'pagination' => [
+                'total' => $total,
+                'per_page' => $limit,
+                'current_page' => ($offset / $limit) + 1,
+                'total_pages' => ceil($total / $limit),
+                'has_more' => ($offset + $limit) < $total,
+            ]
+        ];
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function calculateStats(?array $ownerIds, array $filters = []): array
+    {
+        // ✅ Diferenciar: null = admin ve todo, [] = sin acceso
+        $isGlobalView = $ownerIds === null;
+
+        if (!$isGlobalView && empty($ownerIds)) {
+            return ['total' => 0, 'completed' => 0, 'pending' => 0, 'overdue' => 0, 'highPriority' => 0];
+        }
+
+        // ✅ Base query con mapper
+        $baseQuery = ActivityMapper::prepareQuery(
+            DB::connection(self::CONNECTION)->query(),
+            []
+        );
+        $baseQuery->where('act.activitytype', 'Task')
+            ->where('crm.deleted', 0);
+
+        // ✅ Solo aplicar filtro por ownerIds si NO es vista global
+        if (!$isGlobalView) {
+            $baseQuery->whereIn('crm.smownerid', $ownerIds);
+        }
+
+        $this->applyFilters($baseQuery, $filters);
+
+        return [
+            'total' => (clone $baseQuery)->count(),
+
+            'completed' => (clone $baseQuery)
+                ->whereIn('act.status', ['Completed', 'Closed', 'Held'])
+                ->count(),
+
+            'pending' => (clone $baseQuery)
+                ->whereNotIn('act.status', ['Completed', 'Closed', 'Held'])
+                ->count(),
+
+            'overdue' => (clone $baseQuery)
+                ->whereNotIn('act.status', ['Completed', 'Closed', 'Held'])
+                ->where('act.due_date', '<', date('Y-m-d'))
+                ->whereNotNull('act.due_date')
+                ->where('act.due_date', '!=', '0000-00-00')
+                ->count(),
+
+            'highPriority' => (clone $baseQuery)
+                ->where('act.priority', 'High')
+                ->whereNotIn('act.status', ['Completed', 'Closed', 'Held'])
+                ->count(),
+        ];
+    }
+
+    /**
+     * Apply optional filters to a task query
+     * 
+     * @param \Illuminate\Database\Query\Builder $query Query builder to modify
+     * @param array<string, mixed> $filters Filter criteria
+     * @return void
+     */
+    private function applyFilters($query, array $filters): void
+    {
+        // Status filter (single value or array)
+        if (isset($filters['status'])) {
+            if (is_array($filters['status'])) {
+                $query->whereIn('vtiger_activity.status', $filters['status']);
+            } else {
+                $query->where('vtiger_activity.status', $filters['status']);
+            }
+        }
+
+        // Priority filter
+        if (isset($filters['priority'])) {
+            if (is_array($filters['priority'])) {
+                $query->whereIn('vtiger_activity.priority', $filters['priority']);
+            } else {
+                $query->where('vtiger_activity.priority', $filters['priority']);
+            }
+        }
+
+        // Date range filters (due_date)
+        if (isset($filters['dateFrom'])) {
+            $query->where('vtiger_activity.due_date', '>=', $filters['dateFrom']);
+        }
+        if (isset($filters['dateTo'])) {
+            $query->where('vtiger_activity.due_date', '<=', $filters['dateTo']);
+        }
+
+        // Search filter (subject and description)
+        if (isset($filters['search']) && trim($filters['search']) !== '') {
+            $search = '%' . trim($filters['search']) . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('vtiger_activity.subject', 'LIKE', $search)
+                    ->orWhere('vtiger_crmentity.description', 'LIKE', $search);
+            });
+        }
+
+        // Related module filter
+        if (isset($filters['relatedModule']) && trim($filters['relatedModule']) !== '') {
+            $query->where('vtiger_crmentity.setype', $filters['relatedModule']);
+        }
+
+        // Related record ID filter
+        if (isset($filters['relatedRecordId']) && (int) $filters['relatedRecordId'] > 0) {
+            $query->where('vtiger_seactivityrel.crmid', (int) $filters['relatedRecordId']);
+        }
     }
 }

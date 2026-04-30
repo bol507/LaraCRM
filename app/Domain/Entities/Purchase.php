@@ -2,6 +2,7 @@
 
 namespace App\Domain\Entities;
 
+// vtiger_purchaseorders
 class Purchase
 {
     public function __construct(

@@ -27,6 +27,7 @@ use App\Application\Repositories\RoleRepositoryInterface;
 use App\Application\Repositories\TaskRepositoryInterface;
 use App\Application\Repositories\UserRepositoryInterface;
 use App\Application\Repositories\UserRoleAssignmentRepositoryInterface;
+use App\Application\Repositories\VendorQuoteRepositoryInterface;
 use App\Application\Repositories\VendorRepositoryInterface;
 use App\Application\UseCases\Core\Activity\CreateTaskActivityUseCase;
 use App\Application\UseCases\Core\Activity\UpdateTaskActivityUseCase;
@@ -53,6 +54,7 @@ use App\Infrastructure\Repositories\RoleProfileAssignmentRepository;
 use App\Infrastructure\Repositories\RoleRepository;
 use App\Infrastructure\Repositories\ShippingAddressRepository;
 use App\Infrastructure\Repositories\UserRoleAssignmentRepository;
+use App\Infrastructure\Repositories\VendorQuoteRepository;
 use App\Infrastructure\Repositories\VendorRepository;
 use App\Infrastructure\Repositories\VtigerActivityLogRepository;
 use App\Infrastructure\Repositories\VtigerAttachmentRepository;
@@ -232,6 +234,13 @@ class AppServiceProvider extends ServiceProvider
             MaterialRequestRepositoryInterface::class,
             MaterialRequestRepository::class
         );
+
+        // VendorQuoteRepository
+        $this->app->bind(
+            VendorQuoteRepositoryInterface::class,
+            VendorQuoteRepository::class
+        );
+
 
        
     }

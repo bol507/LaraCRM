@@ -190,15 +190,37 @@ class MaterialRequestRepository implements MaterialRequestRepositoryInterface
 
     public function updateStatus(int $id, string $status, ?int $approvedBy = null, ?string $notes = null): bool
     {
+        $updateData = [
+            'status' => $status,
+            'updated_at' => now(),
+        ];
+
+       
+        switch ($status) {
+            case 'approved':
+            case 'partially_approved':
+                $updateData['approved_by'] = $approvedBy;
+                $updateData['approved_at'] = now();
+                break;
+
+            case 'rejected':
+                $updateData['rejection_notes'] = $notes;
+                // Opcional: limpiar aprobación si se rechaza
+                // $updateData['approved_by'] = null;
+                // $updateData['approved_at'] = null;
+                break;
+
+            case 'procurement_in_progress':
+            case 'fully_procured':
+            case 'closed':
+                // Para estados de flujo, SOLO actualizamos status y updated_at
+                // NO tocamos approved_by, approved_at ni rejection_notes
+                break;
+        }
+
         return DB::connection(self::CONNECTION)->table(self::TABLE_REQUESTS)
             ->where('id', $id)
-            ->update([
-                'status' => $status,
-                'approved_by' => $approvedBy,
-                'approved_at' => $approvedBy ? now() : null,
-                'rejection_notes' => $status === 'rejected' ? $notes : DB::raw('rejection_notes'),
-                'updated_at' => now(),
-            ]) > 0;
+            ->update($updateData) > 0;
     }
 
     public function updateItemStatus(int $itemId, string $status, ?float $approvedQty = null, ?int $approvedBy = null): bool

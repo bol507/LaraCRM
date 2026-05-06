@@ -173,7 +173,7 @@ Route::middleware('jwt')->group(function () {
             Route::get('/{quoteId}', [VendorQuoteController::class, 'show']);
             Route::patch('/{quoteId}/send', [VendorQuoteController::class, 'send']);
             Route::patch('/{quoteId}/accept', [VendorQuoteController::class, 'accept']);
-            Route::patch('/{quoteId}/reject', [VendorQuoteController::class, 'reject']);
+            //Route::patch('/{quoteId}/reject', [VendorQuoteController::class, 'reject']); //negotiate
         });
     });
 

@@ -3,12 +3,16 @@
 namespace App\Application\UseCases\Procurement;
 
 use App\Application\DTOs\Procurement\CreateVendorQuoteDto;
+use App\Application\Repositories\MaterialRequestRepositoryInterface;
 use App\Application\Repositories\VendorQuoteRepositoryInterface;
 use Illuminate\Support\Facades\DB;
 
 // app/Application/UseCases/Procurement/CreateVendorQuoteUseCase.php
 class CreateVendorQuoteUseCase {
-    public function __construct(private readonly VendorQuoteRepositoryInterface $repo) {}
+    public function __construct(
+        private readonly VendorQuoteRepositoryInterface $repo,
+        private readonly MaterialRequestRepositoryInterface $requestRepo,
+    ) {}
 
     public function execute(CreateVendorQuoteDto $dto): int {
         return DB::connection('vtiger')->transaction(function () use ($dto) {
@@ -30,6 +34,11 @@ class CreateVendorQuoteUseCase {
             }
 
             $this->repo->updateStatus($quoteId, 'sent');
+            $this->requestRepo->updateStatus(
+                id: $dto->materialRequestId,
+                status: 'procurement_in_progress'
+              
+            );
             return $quoteId;
         });
     }

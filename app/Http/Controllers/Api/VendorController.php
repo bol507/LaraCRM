@@ -14,6 +14,7 @@ use App\Application\DTOs\Vendor\CreateVendorRequest;
 use App\Application\DTOs\Vendor\UpdateVendorRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -142,5 +143,28 @@ class VendorController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    public function byProject(Request $request, int $projectId): JsonResponse
+    {
+        // TODO optional: filter by projectId
+         $vendors = DB::connection('vtiger')
+        ->table('vtiger_vendor as v')
+        ->join('vtiger_crmentity as e', function($join) {
+            $join->on('v.vendorid', '=', 'e.crmid')
+                 ->where('e.setype', '=', 'Vendors')  
+                 ->where('e.deleted', '=', 0);
+        })
+        ->select(
+            'v.vendorid as id', 
+            'v.vendorname as name'
+            
+            // 'v.email', 'v.phone', 'v.vendorno'
+        )
+        ->orderBy('v.vendorname', 'asc')
+        ->get()
+        ->toArray();
+
+        return response()->json(['data' => $vendors]);
     }
 }

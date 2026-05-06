@@ -6,9 +6,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    
+
+
     public function up(): void
     {
-        Schema::create('procurement_catalogs', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('procurement_catalogs', function (Blueprint $table) {
             $table->id();
             $table->string('category', 50);   // 'item_type', 'reason_type', 'unit', 'priority'
             $table->string('code', 50);       // 'material', 'missing', 'kg', 'urgent', etc.
@@ -22,6 +25,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('procurement_catalogs');
+        Schema::connection($this->connection)->dropIfExists('procurement_catalogs');
     }
 };

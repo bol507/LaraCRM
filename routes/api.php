@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\GlobalSearchController;
+use App\Http\Controllers\Api\MaterialRequestController;
 use App\Http\Controllers\Api\OpportunityController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuoteController;
@@ -17,11 +18,13 @@ use App\Http\Controllers\Api\QuotePDFController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\PurchaseController;
+use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\RoleProfileController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VendorController;
+use App\Http\Controllers\Api\VendorQuoteController;
 use App\Http\Controllers\Auth\AuthController;
 
 Route::prefix('auth')->group(function () {
@@ -70,7 +73,7 @@ Route::middleware('jwt')->group(function () {
             Route::get('/check-name', [RoleController::class, 'checkName']);
             Route::put('/{id}', [RoleController::class, 'update']);
             Route::delete('/{id}', [RoleController::class, 'destroy']);
-                
+
             //  GET /api/settings/roles/{roleId} → RoleDto
             Route::put('/{roleId}/profile', [RoleProfileController::class, 'assign']);
             Route::get('/{roleId}/profile', [RoleProfileController::class, 'show']);
@@ -136,13 +139,53 @@ Route::middleware('jwt')->group(function () {
 
     // Projects
     Route::prefix('projects')->group(function () {
+        // ===== Projects CRUD =====
         Route::get('/', [ProjectController::class, 'index']);
         Route::get('/search', [ProjectController::class, 'search']);
+        Route::get('/{id}/vendors', [VendorController::class, 'byProject']);
         Route::get('/{id}', [ProjectController::class, 'show']);
         Route::post('/', [ProjectController::class, 'store']);
         Route::put('/{id}', [ProjectController::class, 'update']);
         Route::delete('/{id}', [ProjectController::class, 'destroy']);
+        // ===== Material Requests =====
+        Route::prefix('{projectId}/material-requests')->group(function () {
+            Route::get('/', [MaterialRequestController::class, 'index']);
+            Route::get('/{requestId}', [MaterialRequestController::class, 'show']);
+            Route::post('/', [MaterialRequestController::class, 'store']);
+            Route::patch('/{requestId}/approve', [MaterialRequestController::class, 'approve']);
+        });
+
+        // ===== Purchase Orders =====
+        Route::prefix('{projectId}/purchase-orders')->group(function () {
+            // Generar POs desde ítems aprobados (tu caso actual)
+            Route::post('/generate', [PurchaseOrderController::class, 'generate']);
+
+            // CRUD estándar para gestión posterior
+            Route::get('/', [PurchaseOrderController::class, 'index']);
+            Route::get('/{poId}', [PurchaseOrderController::class, 'show']);
+            Route::patch('/{poId}', [PurchaseOrderController::class, 'update']);
+            Route::delete('/{poId}', [PurchaseOrderController::class, 'destroy']);
+        });
+        // ===== Vendor Quotes =====
+        Route::prefix('{projectId}/vendor-quotes')->group(function () {
+            Route::get('/', [VendorQuoteController::class, 'index']);
+            Route::post('/', [VendorQuoteController::class, 'store']);
+            Route::get('/{quoteId}', [VendorQuoteController::class, 'show']);
+            Route::patch('/{quoteId}/send', [VendorQuoteController::class, 'send']);
+            Route::patch('/{quoteId}/accept', [VendorQuoteController::class, 'accept']);
+            Route::patch('/{quoteId}/reject', [VendorQuoteController::class, 'reject']);
+        });
     });
+
+    /*
+    Route::prefix('purchase-orders')->group(function () {
+        Route::post('/', [PurchaseOrderController::class, 'store']);
+        Route::post('/generate-po', [PurchaseOrderController::class, 'generateFromRequests']);
+        Route::get('/projects/{projectId}', [PurchaseOrderController::class, 'index']);
+        Route::patch('/items/{itemId}/receive', [PurchaseOrderController::class, 'receive']);
+    });
+    */
+
 
     // Comment
     Route::prefix('comments')->group(function () {
@@ -162,7 +205,7 @@ Route::middleware('jwt')->group(function () {
 
     Route::prefix('tasks')->group(function () {
         // --- Task CRUD ---
-       // Route::get('/', [TaskController::class, 'index']);                    // GET /api/tasks
+        // Route::get('/', [TaskController::class, 'index']);                    // GET /api/tasks
         //Route::post('/', [TaskController::class, 'store']);                   // POST /api/tasks
         //Route::get('/{taskId}', [TaskController::class, 'show']);             // GET /api/tasks/{id}
         //Route::patch('/{taskId}', [TaskController::class, 'update']);         // PATCH /api/tasks/{id}
@@ -192,10 +235,10 @@ Route::middleware('jwt')->group(function () {
             Route::post('/', [CalendarController::class, 'store']);                   // POST /api/tasks
             Route::get('/{id}', [CalendarController::class, 'show']); // GET /api/calendar/activities/{id}
             Route::patch('/{id}', [CalendarController::class, 'update']); // PATCH /api/calendar/activities/{id}
-            
+
         });
     });
-        
+
 
 
     Route::prefix('dashboard')->group(function () {

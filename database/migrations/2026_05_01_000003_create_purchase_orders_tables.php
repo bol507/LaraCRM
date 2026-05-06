@@ -6,13 +6,16 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    
+    protected $connection = 'vtiger';
+
     public function up(): void
     {
-        Schema::create('purchase_orders', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('purchase_orders', function (Blueprint $table) {
             $table->id();
             $table->string('po_number')->unique(); // OC-2026-0042
             $table->unsignedInteger('project_id');
-            $table->unsignedBigInteger('vendor_id')->nullable(); // ⚠️ Ajusta tipo si tu tabla vendors usa int
+            $table->unsignedBigInteger('vendor_id')->nullable(); 
             $table->string('status')->default('draft'); // draft, approved, sent_to_vendor, partially_received, completed, closed
             $table->decimal('total_amount', 12, 2)->default(0.00);
             $table->unsignedInteger('created_by');
@@ -26,7 +29,7 @@ return new class extends Migration
             $table->index('status');
         });
 
-        Schema::create('purchase_order_items', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('purchase_order_items', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('po_id');
             $table->foreign('po_id')->references('id')->on('purchase_orders')->onDelete('cascade');
@@ -48,7 +51,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('purchase_order_items');
-        Schema::dropIfExists('purchase_orders');
+        Schema::connection($this->connection)->dropIfExists('purchase_order_items');
+        Schema::connection($this->connection)->dropIfExists('purchase_orders');
     }
 };

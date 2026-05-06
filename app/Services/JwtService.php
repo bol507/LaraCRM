@@ -29,7 +29,7 @@ class JwtService
      * @return string Encoded JWT token
      * @throws \Exception If token generation fails
      */
-    public function generateToken(int $userId): string
+    public function generateToken(int $userId, array $userData = []): string
     {
         // Validate user ID
         if ($userId <= 0) {
@@ -45,6 +45,10 @@ class JwtService
             'sub' => $userId,
             'iat' => $issuedAt,
             'exp' =>  $expiration,
+
+            'role_id' => $userData['role_id'] ?? null,
+            'rolename' => $userData['rolename'] ?? null,
+            'is_admin' => $userData['is_admin'] ?? false,
         ];
 
         return JWT::encode($payload, $this->getSecret(), 'HS256');
@@ -139,7 +143,7 @@ class JwtService
      */
     private function getSecret(): string
     {
-       $secret = config('jwt.secret');
+        $secret = config('jwt.secret');
         if (empty($secret)) {
             throw new \RuntimeException('JWT secret key is not configured');
         }

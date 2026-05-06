@@ -22,17 +22,17 @@ class CreateEntityUseCase
     /**
      * Execute the creation of a generic CRM entity
      *
-     * Orquestación simple: genera ID y guarda en crmentity
+     * Simple orchestration: generates ID and saves to crmentity
      *
-     * @param  array  $data  Datos para vtiger_crmentity
-     * @param  string  $setype  Tipo de entidad (Accounts, Contacts, Potentials, etc.)
-     * @param  string|null  $table  Tabla específica para generar ID (opcional)
-     * @param  int|null  $userId  Usuario que crea la entidad
-     * @param  int|null  $crmId  ID pre-generado (opcional, para cuando ya se generó IDexternamente)
-     * @return int ID de la entidad creada
+     * @param  array  $data  Data for vtiger_crmentity
+     * @param  string  $setype  Entity type (Accounts, Contacts, Potentials, etc.)
+     * @param  string|null  $table  Specific table for ID generation (optional)
+     * @param  int|null  $userId  User creating the entity
+     * @param  int|null  $crmId  Pre-generated ID (optional, for when ID was already generated externally)
+     * @return int ID of the created entity
      *
-     * @throws InvalidArgumentException Si faltan datos requeridos
-     * @throws RuntimeException Si falla la creación
+     * @throws InvalidArgumentException If required data is missing
+     * @throws RuntimeException If creation fails
      */
     public function execute(
         array $data,
@@ -46,19 +46,19 @@ class CreateEntityUseCase
         $userId = $userId ?? 1;
         $now = now()->format('Y-m-d H:i:s');
 
-        // Determinar la tabla fuente para el ID (crmentity es la fuente de verdad)
+        // Determine the source table for the ID (crmentity is the source of truth)
         $idTable = $table ?? 'vtiger_crmentity';
         $lockName = self::CONFIG['lock_prefix'].strtolower($setype);
 
         return DB::connection('vtiger')->transaction(function () use ($data, $setype, $idTable, $lockName, $userId, $now, $crmId) {
-            // 1. Generar ID único desde crmentity (o usar el pre-generado)
-            $crmId = $crmId ?? $this->idGenerator->generateNextId(
+            // 1. Generate unique ID from crmentity (or use pre-generated one)
+            $crmId = $data['crmid'] ?? $this->idGenerator->generateNextId(
                 table: $idTable,
                 column: 'crmid',
                 lockName: $lockName
             );
 
-            // 2. Preparar datos para crmentity
+            // 2. Prepare data for crmentity
             $entityData = [
                 'crmid' => $crmId,
                 'smcreatorid' => $data['smcreatorid'] ?? $userId,
@@ -71,7 +71,7 @@ class CreateEntityUseCase
                 'deleted' => 0,
             ];
 
-            // 3. Insertar en vtiger_crmentity
+            // 3. Insert into vtiger_crmentity
             $this->crmentity->insert($entityData);
 
             return $crmId;

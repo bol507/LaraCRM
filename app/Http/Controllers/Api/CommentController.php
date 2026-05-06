@@ -249,7 +249,7 @@ class CommentController extends Controller
             );
 
 
-            return response()->json(CommentMapper::toArray($comment));
+            return response()->json($comment);
         } catch (InvalidArgumentException $e) {
             // Invalid ID or unauthorized access
             return response()->json([

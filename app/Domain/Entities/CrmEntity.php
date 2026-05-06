@@ -20,6 +20,11 @@ class CrmEntity
     public const TYPE_USERS = 'Users';
     public const TYPE_GROUPS = 'Groups';
 
+    public const TYPE_PROJECT = 'Project';
+    public const TYPE_PROJECT_TASK = 'ProjectTask';
+    public const TYPE_PROJECT_MILESTONE = 'ProjectMilestone';
+    public const TYPE_QUOTES = 'Quotes';
+
     /**
      * Presence flags
      */
@@ -93,6 +98,10 @@ class CrmEntity
             self::TYPE_PRODUCTS,
             self::TYPE_USERS,
             self::TYPE_GROUPS,
+            self::TYPE_PROJECT,
+            self::TYPE_PROJECT_TASK,
+            self::TYPE_PROJECT_MILESTONE,
+            self::TYPE_QUOTES,
         ];
     }
 

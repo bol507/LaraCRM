@@ -6,9 +6,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    
+    protected $connection = 'vtiger'; 
+
     public function up(): void
     {
-        Schema::create('material_requests', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('material_requests', function (Blueprint $table) {
             $table->id();
             $table->unsignedInteger('project_id'); // FK a vtiger_project.projectid
             $table->unsignedInteger('requested_by'); // FK a vtiger_users.id
@@ -23,7 +26,7 @@ return new class extends Migration
             $table->index('status');
         });
 
-        Schema::create('material_request_items', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('material_request_items', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('request_id');
             $table->foreign('request_id')->references('id')->on('material_requests')->onDelete('cascade');
@@ -49,7 +52,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('material_request_items');
-        Schema::dropIfExists('material_requests');
+        Schema::connection($this->connection)->dropIfExists('material_request_items');
+        Schema::connection($this->connection)->dropIfExists('material_requests');
     }
 };

@@ -24,16 +24,16 @@ class QuoteRepository implements QuoteRepositoryInterface
     private const CONNECTION = 'vtiger';
 
     private const TAX = 0.07;
+
     /**
-     * Deprecated
-     *
-     * 
+     * @deprecated
      */
     public function create(CreateQuoteRequest $request, int $createdByUserId): int
     {
         $quoteId = $this->generateQuoteId();
         $subtotal = 0;
         $itemsWithTotals = [];
+        
         if (! empty($request->items)) {
             foreach ($request->items as $item) {
                 $netprice = $item['listprice'] * (1 - ($item['discount_percent'] ?? 0) / 100);
@@ -52,11 +52,9 @@ class QuoteRepository implements QuoteRepositoryInterface
             }
         }
 
-
         $itbms = $subtotal * self::TAX;
         $totalWithTax = $subtotal + $itbms;
         
-
         DB::connection(self::CONNECTION)->transaction(function () use ($request, $createdByUserId, $quoteId, $subtotal, $totalWithTax, $itbms, $itemsWithTotals) {
             // Insert into vtiger_quotes
             DB::connection(self::CONNECTION)->table(self::TABLE)->insert([
@@ -100,6 +98,7 @@ class QuoteRepository implements QuoteRepositoryInterface
                 'modifiedby' => $createdByUserId,
                 'deleted' => 0,
             ]);
+            
             foreach ($itemsWithTotals as $item) {
                 DB::connection(self::CONNECTION)
                     ->table('vtiger_inventoryproductrel')
@@ -139,7 +138,6 @@ class QuoteRepository implements QuoteRepositoryInterface
                 $updateData['accountid'] = $request->accountid;
             }
 
-
             if (! empty($updateData)) {
                 DB::connection(self::CONNECTION)->table(self::TABLE)
                     ->where('quoteid', $quoteId)
@@ -155,7 +153,7 @@ class QuoteRepository implements QuoteRepositoryInterface
             if ($request->subject !== null) {
                 $crmentityData['label'] = $request->subject;
             }
-            //description in vtiger_crmentity
+            // description in vtiger_crmentity
             if (isset($request->description)) {
                 $crmentityData['description'] = $request->description;
             }
@@ -202,6 +200,7 @@ class QuoteRepository implements QuoteRepositoryInterface
                 $updateData['compound_taxes_info'] = json_encode(['tax1' => $taxAmount]);
                 $updateData['pre_tax_total'] = $subtotal;
             }
+            
             if (! empty($updateData)) {
                 DB::connection(self::CONNECTION)->table(self::TABLE)
                     ->where('quoteid', $quoteId)
@@ -238,8 +237,6 @@ class QuoteRepository implements QuoteRepositoryInterface
             return null;
         }
 
-
-
         // Get line items
         $items = DB::connection(self::CONNECTION)
             ->table('vtiger_inventoryproductrel')
@@ -251,7 +248,6 @@ class QuoteRepository implements QuoteRepositoryInterface
                 $quantity = is_numeric($item->quantity) ? (float) $item->quantity : 0;
                 $listprice = is_numeric($item->listprice) ? (float) $item->listprice : 0;
                 $discountPercent = is_numeric($item->discount_percent) ? (float) $item->discount_percent : 0;
-
 
                 $netprice = $listprice * (1 - ($discountPercent / 100));
                 $total = $quantity * $netprice;
@@ -276,18 +272,15 @@ class QuoteRepository implements QuoteRepositoryInterface
                     'total' => $total,
                     'description' => $description, 
                     'comment' => $item->comment ?? null,
-
                 ];
             })
             ->toArray();
 
-
         $potentialName = null;
         $assignedUserName = null;
-
         $accountName = $row->accountname ?? null;
 
-        // (potential)
+        // Get potential name
         if ($row->potentialid) {
             $potential = DB::connection('vtiger')
                 ->table('vtiger_potential')
@@ -296,7 +289,7 @@ class QuoteRepository implements QuoteRepositoryInterface
             $potentialName = $potential?->potentialname;
         }
 
-        // User assigned
+        // Get assigned user name
         if ($row->assigned_user_id) {
             $user = DB::connection('vtiger')
                 ->table('vtiger_users')
@@ -480,7 +473,7 @@ class QuoteRepository implements QuoteRepositoryInterface
         $subtotal = 0;
         $tax = self::TAX;
 
-        // Insertar ítems primero para calcular totales
+        // Insert items first to calculate totals
         if (! empty($items)) {
             foreach ($items as $index => $item) {
                 $quantity = is_string($item['quantity']) ? (float) $item['quantity'] : ($item['quantity'] ?? 0);
@@ -504,14 +497,14 @@ class QuoteRepository implements QuoteRepositoryInterface
             }
         }
 
-        // Calcular totales
+        // Calculate totals
         $data['subtotal'] = $subtotal;
         $totalTax = $subtotal * $tax;
         $data['total'] = $subtotal + $totalTax;
         $data['compound_taxes_info'] = json_encode(['tax1' => $totalTax]);
         $data['pre_tax_total'] = $subtotal;
 
-        // Insertar quote
+        // Insert quote
         DB::connection(self::CONNECTION)->table(self::TABLE)->insert($data);
 
         return $data['quoteid'];
@@ -537,19 +530,12 @@ class QuoteRepository implements QuoteRepositoryInterface
                 throw new \Exception('Invalid quote number format');
             }
 
-
-            $yearPart = $parts[1]; // '26'
-            $numberPart = $parts[2]; // '00001'
-
-
-            $year = (int) substr($maxQuoteNo, 2, 2);
-            $currentYear = (int) date('y');  // ← 2-digit year: 'y' instead of 'Y' (2026)
-
+            $yearPart = $parts[1];
+            $numberPart = $parts[2];
 
             if ($yearPart !== $currentYearShort) {
                 return 'C-' . $currentYearShort . '-00001';
             }
-
 
             $nextNumber = (int) $numberPart + 1;
 
@@ -585,15 +571,14 @@ class QuoteRepository implements QuoteRepositoryInterface
     /**
      * Duplicate an existing quote with new ID and quote number
      * 
-     * @param array $baseData Datos base de la cotización (sin quoteid ni quote_no)
-     * @param array $itemsData Ítems a insertar
-     * @param int $createdByUserId ID del usuario que crea la copia
-     * @return int|null El nuevo quoteid o null si falla
+     * @param array $baseData Base data of the quote (without quoteid or quote_no)
+     * @param array $itemsData Items to insert
+     * @param int $createdByUserId ID of the user creating the copy
+     * @return int|null The new quoteid or null if fails
      */
     public function duplicate(array $baseData, array $itemsData, int $createdByUserId): ?int
     {
         return DB::connection('vtiger')->transaction(function () use ($baseData, $itemsData, $createdByUserId) {
-
             $maxCrmid = DB::connection('vtiger')
                 ->table('vtiger_crmentity')
                 ->max('crmid');

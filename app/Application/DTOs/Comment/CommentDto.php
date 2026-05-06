@@ -98,7 +98,7 @@ class CommentDto
             : null;
 
         return new self(
-        // Fields from vtiger_modcomments
+            // Fields from vtiger_modcomments
             id: (int) $row->modcommentsid,
             content: (string) $row->commentcontent,
             relatedTo: (int) $row->related_to,
@@ -156,23 +156,75 @@ class CommentDto
         return [
             'id' => $this->id,
             'content' => $this->content,
-            'relatedTo' => $this->relatedTo,
-            'parentCommentId' => $this->parentCommentId,
-            'customerId' => $this->customerId,
+
+            'relatedToId' => $this->relatedTo,
+            'relatedModule' => $this->relatedModule ?? null,
+            'relatedEntityType' => $this->relatedModule ?? null,
+
             'userId' => $this->userId,
-            'reasonToEdit' => $this->reasonToEdit,
+            'userName' => $this->userName,
+            'userEmail' => $this->userEmail,
+
+            'createdAt' => $this->createdAt,
+            'updatedAt' => $this->updatedAt,
+            'formattedCreatedAt' => $this->getFormattedCreatedAt(),
+
             'isPrivate' => $this->isPrivate,
+            'isReply' => $this->parentCommentId !== null,
+            'parentCommentId' => $this->parentCommentId,
+
+            'attachment' => $this->filename,              // ← filename → attachment
+            'hasAttachment' => !empty($this->filename),
+
+            'customerId' => $this->customerId,
+            'reasonToEdit' => $this->reasonToEdit,
+
             'filename' => $this->filename,
             'relatedEmailId' => $this->relatedEmailId,
 
             // Enriched fields for frontend (camelCase)
-            'userName' => $this->userName,
-            'userEmail' => $this->userEmail,
-            'createdAt' => $this->createdAt,
-            'updatedAt' => $this->updatedAt,
+
+
             'createdBy' => $this->createdBy,
             'ownerId' => $this->ownerId,
-            'relatedModule' => $this->relatedModule,
+
+            'relatedEntityIcon' => $this->getRelatedEntityIcon(),
+
         ];
+    }
+
+    /**
+     * Get icon for related entity type (matches frontend expectations)
+     */
+    private function getRelatedEntityIcon(): string
+    {
+        return match ($this->relatedModule) {
+            'Project' => '📋',
+            'Calendar', 'Tasks' => '✓',
+            'Quotes' => '📄',
+            'Accounts' => '🏢',
+            'Contacts' => '👤',
+            'Potentials' => '💰',
+            'HelpDesk' => '🎫',
+            default => '🔗',
+        };
+    }
+
+    /**
+     * Format creation date for UI display
+     * Format: DD/MM/YYYY HH:mm
+     */
+    private function getFormattedCreatedAt(): ?string
+    {
+        if (!$this->createdAt) {
+            return null;
+        }
+
+        try {
+            $date = new \DateTimeImmutable($this->createdAt);
+            return $date->format('d/m/Y H:i');
+        } catch (\Exception) {
+            return $this->createdAt;
+        }
     }
 }

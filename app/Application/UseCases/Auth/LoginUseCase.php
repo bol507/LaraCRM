@@ -47,9 +47,13 @@ class LoginUseCase
         if (!$dbUser) {
             throw new RuntimeException('User data corrupted');
         }
-
+        $userData = [
+            'role_id' => $dbUser->getRoleId(),
+            'rolename' => $dbUser->getRoleName(),
+            'is_admin' => $dbUser->isAdmin(),
+        ];
         // 5. Generate JWT token
-        $token = $this->jwtService->generateToken($dbUser->getId());
+        $token = $this->jwtService->generateToken($dbUser->getId(), $userData);
 
         return [
             'access_token' => $token,

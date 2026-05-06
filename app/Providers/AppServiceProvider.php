@@ -13,11 +13,13 @@ use App\Application\Repositories\ContactRepositoryInterface;
 use App\Application\Repositories\CrmentityRepositoryInterface;
 use App\Application\Repositories\DashboardRepositoryInterface;
 use App\Application\Repositories\GeneralConditionsRepositoryInterface;
+use App\Application\Repositories\MaterialRequestRepositoryInterface;
 use App\Application\Repositories\ModuleRepositoryInterface;
 use App\Application\Repositories\OpportunityRepositoryInterface;
 use App\Application\Repositories\PasswordResetRepositoryInterface;
 use App\Application\Repositories\ProfileRepositoryInterface;
 use App\Application\Repositories\ProjectRepositoryInterface;
+use App\Application\Repositories\PurchaseOrderRepositoryInterface;
 use App\Application\Repositories\PurchaseRepositoryInterface;
 use App\Application\Repositories\QuoteRepositoryInterface;
 use App\Application\Repositories\RoleProfileAssignmentRepositoryInterface;
@@ -39,10 +41,12 @@ use App\Infrastructure\Repositories\Core\CrmentityRepository;
 use App\Infrastructure\Repositories\Core\IdGeneratorRepository;
 use App\Infrastructure\Repositories\Core\ModuleRepository;
 use App\Infrastructure\Repositories\Core\SeActivityRelRepository;
+use App\Infrastructure\Repositories\MaterialRequestRepository;
 use App\Infrastructure\Repositories\PasswordResetRepository;
 use App\Infrastructure\Repositories\PotentialRepository;
 use App\Infrastructure\Repositories\ProfileRepository;
 use App\Infrastructure\Repositories\ProjectRepository;
+use App\Infrastructure\Repositories\PurchaseOrderRepository;
 use App\Infrastructure\Repositories\PurchaseRepository;
 use App\Infrastructure\Repositories\QuoteRepository;
 use App\Infrastructure\Repositories\RoleProfileAssignmentRepository;
@@ -215,6 +219,18 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             ModuleRepositoryInterface::class,
             ModuleRepository::class
+        );
+
+        // PurchaseOrderRepository
+        $this->app->bind(
+            PurchaseOrderRepositoryInterface::class,
+            PurchaseOrderRepository::class
+        );
+
+        // MaterialRequestRepository
+        $this->app->bind(
+            MaterialRequestRepositoryInterface::class,
+            MaterialRequestRepository::class
         );
 
        

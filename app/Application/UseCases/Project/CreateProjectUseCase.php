@@ -63,6 +63,7 @@ class CreateProjectUseCase
             // 2. Insert vtiger_crmentity using generic use case
             $this->createEntity->execute(
                 data: [
+                    'crmid' => $projectId,
                     'label' => trim($data['projectname']),
                     'description' => $data['description'] ?? '',
                     'smownerid' => $assignedUserId,

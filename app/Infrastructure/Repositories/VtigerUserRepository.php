@@ -606,9 +606,10 @@ class VtigerUserRepository implements UserRepositoryInterface
         $now = now()->format('Y-m-d H:i:s');
         $affected = $this->query()
             ->where('id', $id)
-            ->update([ ...$sanitized,
-                    'date_modified' => $now,
-                    'modified_user_id' => $modifiedByUserId
+            ->update([
+                ...$sanitized,
+                'date_modified' => $now,
+                'modified_user_id' => $modifiedByUserId
             ]);
 
         if ($affected > 0) {
@@ -895,5 +896,26 @@ class VtigerUserRepository implements UserRepositoryInterface
     private function clearRoleCache(int $userId): void
     {
         UserRoleDataService::clearCache($userId);
+    }
+
+    public function getNameById(int $userId): ?string
+    {
+        $fullName = DB::connection(self::CONNECTION)
+            ->table(self::USER_TABLE)
+            ->where('id', $userId)
+            ->where('deleted', 0)
+            ->value(DB::raw("CONCAT_WS(' ', first_name, last_name)"));
+
+        if (!empty(trim($fullName ?? ''))) {
+            return trim($fullName);
+        }
+
+        $userName = DB::connection(self::CONNECTION)
+            ->table(self::USER_TABLE)
+            ->where('id', $userId)
+            ->where('deleted', 0)
+            ->value('user_name');
+
+        return !empty($userName) ? $userName : null;
     }
 }

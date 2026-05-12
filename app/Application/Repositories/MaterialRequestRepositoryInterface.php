@@ -62,4 +62,12 @@ interface MaterialRequestRepositoryInterface
      * @return Collection<object>
      */
     public function getItemsByRequestId(int $requestId): Collection;
+
+    /**
+     * checks if the request is fully procured.
+     * 
+     * @param int $requestId ID of the request to check
+     * @return bool True if request is fully procured, false otherwise
+     */
+    public function checkAndUpdateToFullyProcured(int $requestId): bool;
 }

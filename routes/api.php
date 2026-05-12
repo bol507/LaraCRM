@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\GlobalSearchController;
 use App\Http\Controllers\Api\MaterialRequestController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OpportunityController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuoteController;
@@ -157,23 +158,29 @@ Route::middleware('jwt')->group(function () {
 
         // ===== Purchase Orders =====
         Route::prefix('{projectId}/purchase-orders')->group(function () {
-            // Generar POs desde ítems aprobados (tu caso actual)
-            Route::post('/generate', [PurchaseOrderController::class, 'generate']);
-
-            // CRUD estándar para gestión posterior
             Route::get('/', [PurchaseOrderController::class, 'index']);
+            Route::post('/from-quote', [PurchaseOrderController::class, 'storeFromQuote']);
             Route::get('/{poId}', [PurchaseOrderController::class, 'show']);
-            Route::patch('/{poId}', [PurchaseOrderController::class, 'update']);
-            Route::delete('/{poId}', [PurchaseOrderController::class, 'destroy']);
         });
         // ===== Vendor Quotes =====
         Route::prefix('{projectId}/vendor-quotes')->group(function () {
             Route::get('/', [VendorQuoteController::class, 'index']);
             Route::post('/', [VendorQuoteController::class, 'store']);
             Route::get('/{quoteId}', [VendorQuoteController::class, 'show']);
-            Route::patch('/{quoteId}/send', [VendorQuoteController::class, 'send']);
-            Route::patch('/{quoteId}/accept', [VendorQuoteController::class, 'accept']);
-            //Route::patch('/{quoteId}/reject', [VendorQuoteController::class, 'reject']); //negotiate
+        });
+        // ===== Vendor Quotes with out projectId =====
+        Route::prefix('vendor-quotes')->group(function () {
+            Route::patch('/{id}/send', [VendorQuoteController::class, 'send']);
+            Route::patch('/{id}/accept', [VendorQuoteController::class, 'accept']);
+            Route::patch('/{id}/negotiate', [VendorQuoteController::class, 'negotiate']);
+        });
+
+        // ===== Purchase Orders =====
+        Route::prefix('purchase-orders')->group(function () {
+            Route::get('/{poId}/pdf', [PurchaseOrderController::class, 'downloadPdf']);
+            Route::patch('/{poId}/status', [PurchaseOrderController::class, 'updateStatus']);
+            Route::post('/{poId}/items/{itemId}/receipt', [PurchaseOrderController::class, 'recordReceipt']);
+            
         });
     });
 
@@ -289,5 +296,12 @@ Route::middleware('jwt')->group(function () {
         Route::post('/', [VendorController::class, 'store']);
         Route::put('/{id}', [VendorController::class, 'update']);
         Route::delete('/{id}', [VendorController::class, 'destroy']);
+    });
+
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::post('/{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     });
 });

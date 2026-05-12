@@ -3,193 +3,303 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Application\DTOs\Procurement\GeneratePurchaseOrderDto;
-use App\Application\DTOs\Procurement\GetPurchaseOrderRequestDto;
-use App\Application\DTOs\Procurement\ListPurchaseOrdersRequestDto;
-use App\Http\Controllers\Controller;
+use App\Application\DTOs\Procurement\GeneratePOFromQuoteDto;
 use App\Application\Repositories\PurchaseOrderRepositoryInterface;
-use App\Application\UseCases\Procurement\GeneratePurchaseOrderUseCase;
-use App\Application\UseCases\Procurement\GetPurchaseOrderUseCase;
-use App\Application\UseCases\Procurement\ListPurchaseOrdersUseCase;
+use App\Application\UseCases\GetGeneralConditionsUseCase;
+use App\Application\UseCases\Procurement\CompanyInfoService;
+use App\Application\UseCases\Procurement\GeneratePOFromQuoteUseCase;
+use App\Application\UseCases\Procurement\GetPurchaseOrderForPdfUseCase;
+use App\Application\UseCases\Procurement\PurchaseOrderCalculationService;
+use App\Http\Controllers\Controller;
 use App\Services\CurrentUserService;
-use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
-use InvalidArgumentException;
+use Illuminate\Validation\Rule;
+use Barryvdh\DomPDF\Facade\Pdf as PDF;
+use Illuminate\Http\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PurchaseOrderController extends Controller
 {
     public function __construct(
-        private readonly ListPurchaseOrdersUseCase $listUseCase,
-        private readonly GetPurchaseOrderUseCase $getUseCase,
-        private readonly GeneratePurchaseOrderUseCase $generateUseCase,
-        private readonly PurchaseOrderRepositoryInterface $repo
+        private readonly GeneratePOFromQuoteUseCase $generatePOUseCase,
+        private readonly GetPurchaseOrderForPdfUseCase $getPOForPdfUseCase,
+        private readonly PurchaseOrderCalculationService $calculationService,
+        private readonly GetGeneralConditionsUseCase $getGeneralConditionsUseCase,
+        private readonly CompanyInfoService $companyInfoService,
+
     ) {}
 
     /**
+     * POST /api/projects/{projectId}/purchase-orders/from-quote
+     * 
+     * Generar una Purchase Order desde una Vendor Quote aceptada.
+     * Los precios y términos se copian inmutables desde el quote.
+     */
+    public function storeFromQuote(Request $request, int $projectId): JsonResponse
+    {
+        // ✅ Validación estricta del payload
+        $validated = $request->validate([
+            'vendor_quote_id' => 'required|integer|exists:vtiger.nova_vendor_quotes,id',
+            'items' => 'required|array|min:1',
+            'items.*.vendor_quote_item_id' => 'required|integer|exists:vtiger.nova_vendor_quote_items,id',
+            'items.*.material_request_item_id' => 'nullable|integer|exists:vtiger.nova_material_request_items,id',
+            'items.*.item_name' => 'required|string|max:255',
+            'items.*.unit' => 'required|string|max:50',
+            'items.*.quantity' => 'required|numeric|min:0.01',
+            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
+            'items.*.line_total' => 'required|numeric|min:0',
+            'items.*.expected_delivery_date' => 'nullable|date|after_or_equal:today',
+            'items.*.terms' => 'nullable|string|max:500',
+            'items.*.notes' => 'nullable|string|max:1000',
+            'po_number_override' => 'nullable|string|max:50|unique:nova_purchase_orders,po_number',
+            'internal_notes' => 'nullable|string|max:2000',
+        ]);
+
+        // ✅ Mapear a DTO
+        $dto = new GeneratePOFromQuoteDto(
+            projectId: $projectId,
+            vendorQuoteId: $validated['vendor_quote_id'],
+            createdBy: CurrentUserService::idOr(1),
+            items: array_map(function ($item) {
+                return [
+                    'vendor_quote_item_id' => $item['vendor_quote_item_id'],
+                    'material_request_item_id' => $item['material_request_item_id'] ?? null,
+                    'item_name' => $item['item_name'],
+                    'catalog_item_type' => $item['catalog_item_type'] ?? null,
+                    'unit' => $item['unit'],
+                    'quantity' => (float) $item['quantity'],
+                    'unit_price' => (float) $item['unit_price'],
+                    'discount_percent' => (float) ($item['discount_percent'] ?? 0),
+                    'line_total' => (float) $item['line_total'],
+                    'expected_delivery_date' => $item['expected_delivery_date'] ?? null,
+                    'terms' => $item['terms'] ?? null,
+                    'notes' => $item['notes'] ?? null,
+                ];
+            }, $validated['items']),
+            poNumberOverride: $validated['po_number_override'] ?? null,
+            internalNotes: $validated['internal_notes'] ?? null,
+        );
+
+        try {
+            // ✅ Ejecutar UseCase
+            $poId = $this->generatePOUseCase->execute($dto);
+
+            // ✅ Obtener número de PO generado para la respuesta
+            $po = DB::connection('vtiger')
+                ->table('nova_purchase_orders')
+                ->where('id', $poId)
+                ->first();
+
+            return response()->json([
+                'message' => 'Purchase Order created successfully',
+                'data' => [
+                    'id' => $po->id,
+                    'po_number' => $po->po_number,
+                    'status' => $po->status,
+                    'total_amount' => $po->total_amount,
+                    'vendor_id' => $po->vendor_id,
+                    'vendor_quote_id' => $po->vendor_quote_id,
+                    'created_at' => $po->created_at,
+                ]
+            ], 201);
+        } catch (\DomainException $e) {
+            // ✅ Errores de negocio (quote no aceptado, etc.)
+            return response()->json(['error' => $e->getMessage()], 422);
+        } catch (\InvalidArgumentException $e) {
+            // ✅ Errores de validación de datos
+            return response()->json(['error' => $e->getMessage()], 400);
+        } catch (\Throwable $e) {
+            // ✅ Errores inesperados
+            Log::error('Error generating PO from quote', [
+                'project_id' => $projectId,
+                'quote_id' => $validated['vendor_quote_id'] ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json(['error' => 'Internal server error'], 500);
+        }
+    }
+
+    /**
      * GET /api/projects/{projectId}/purchase-orders
+     * Listar POs con filtros opcionales
      */
     public function index(Request $request, int $projectId): JsonResponse
     {
-        $request->validate([
-            'page' => 'integer|min:1',
-            'limit' => 'integer|min:1|max:100',
-            'status' => 'sometimes|string',
-            'vendor_id' => 'sometimes|integer'
-        ]);
+        $filters = $request->only(['status', 'vendor_id']);
+        $page = max(1, $request->integer('page', 1));
+        $limit = min(50, max(1, $request->integer('limit', 20)));
 
-        $dto = new ListPurchaseOrdersRequestDto(
-            projectId: $projectId,
-            page: $request->integer('page', 1),
-            limit: $request->integer('limit', 20),
-            status: $request->input('status'),
-            vendorId: $request->integer('vendor_id')
-        );
+        $result = app(PurchaseOrderRepositoryInterface::class)
+            ->findByProject($projectId, $filters, $limit, $page);
 
-        $result = $this->listUseCase->execute($dto);
-
-        return response()->json([
-            'data' => $result['data'],
-            'meta' => $result['meta']
-        ]);
+        return response()->json($result);
     }
 
-    public function show(Request $request, int $projectId, int $poId): JsonResponse
+    /**
+     * GET /api/projects/{projectId}/purchase-orders/{poId}
+     * Detalle de una PO con sus ítems
+     */
+    public function show(int $projectId, int $poId): JsonResponse
     {
-        
-        $request->validate([
-            'projectId' => 'required|integer',
-            'poId' => 'required|integer'
+        $po = app(PurchaseOrderRepositoryInterface::class)
+            ->findById($poId);
+
+        if (!$po || $po['project_id'] !== $projectId) {
+            return response()->json(['error' => 'Purchase order not found'], 404);
+        }
+
+        return response()->json(['data' => $po]);
+    }
+
+    /**
+     * PATCH /api/purchase-orders/{poId}/status
+     * Actualizar estado de una PO (draft → submitted → approved, etc.)
+     */
+    public function updateStatus(int $poId, Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', Rule::in([
+                'draft',
+                'submitted',
+                'approved',
+                'rejected',
+                'partially_received',
+                'fully_received',
+                'cancelled'
+            ])],
+            'notes' => 'nullable|string|max:1000',
         ]);
 
-        $dto = new GetPurchaseOrderRequestDto(
-            projectId: $projectId,
-            poId: $poId
-        );
+        $updated = app(PurchaseOrderRepositoryInterface::class)
+            ->updateStatus($poId, $validated['status']);
+
+        if (!$updated) {
+            return response()->json(['message' => 'Failed to update status', 'error' => 'PO not found or invalid transition'], 422);
+        }
+
+        return response()->json(['message' => 'Status updated successfully']);
+    }
+
+    /**
+     * POST /api/purchase-orders/{poId}/items/{itemId}/receipt
+     * Registrar recepción de un ítem específico
+     */
+    public function recordReceipt(int $poId, int $itemId, Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'quantity_received' => 'required|numeric|min:0.01',
+            'received_date' => 'required|date|before_or_equal:today',
+            'notes' => 'nullable|string|max:500',
+            'received_by' => 'nullable|integer|exists:vtiger.vtiger_users,id',
+        ]);
 
         try {
-            $po = $this->getUseCase->execute($dto);
+            $repo = app(PurchaseOrderRepositoryInterface::class);
+            $result = $repo->recordItemReceipt($poId, $itemId, [
+                'quantity_received' => (float) $validated['quantity_received'],
+                'received_date' => $validated['received_date'],
+                'notes' => $validated['notes'] ?? null,
+                'received_by' => $validated['received_by'] ?? \App\Services\CurrentUserService::idOr(1),
+            ]);
 
             return response()->json([
-                'data' => $po,
-                'message' => 'Purchase order retrieved successfully'
+                'message' => 'Receipt recorded successfully',
+                'data' => (object) $result,
             ]);
-        } catch (DomainException $e) {
-            return response()->json(['error' => $e->getMessage()], 404);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'message' => 'Receipt error',
+                'error' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Error recording receipt', [
+                'po_id' => $poId,
+                'item_id' => $itemId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'message' => 'Internal server error',
+                'error' => 'An unexpected error occurred',
+            ], 500);
         }
     }
 
     /**
-     * POST /api/purchase-orders
+     * GET /api/projects/{projectId}/purchase-orders/{poId}/pdf
+     * 
+     * @return Response BinaryFileResponse en éxito, JsonResponse en error
      */
-    public function store(Request $request): JsonResponse
+    public function downloadPdf(int $projectId, int $poId)
     {
         try {
-            $validated = $request->validate([
-                'vendor_id' => 'nullable|integer|exists:vtiger_vendor,vendorid',
-                'approved_item_ids' => 'required|array|min:1',
-                'approved_item_ids.*' => 'required|integer|exists:material_request_items,id',
-                'po_notes' => 'nullable|string|max:500',
-                'expected_delivery' => 'nullable|date',
-            ]);
+            // ✅ 1. Obtener datos vía UseCase
+            $po = $this->getPOForPdfUseCase->execute($poId, $projectId);
 
-            $creatorId = $request->integer('created_by_id') ?? $request->user()?->id;
-            if (!$creatorId) {
-                return response()->json(['error' => 'created_by_id or authenticated user required'], 400);
+            if (!$po) {
+                // ✅ Ahora válido: JsonResponse extiende Response
+                return response()->json([
+                    'message' => 'Purchase Order not found',
+                    'error' => "PO #{$poId} does not exist or you don't have access",
+                ], 404);
             }
 
-            $dto = new GeneratePurchaseOrderDto(
-                projectId: $validated['project_id'],
-                vendorId: isset($validated['vendor_id']) ? (int) $validated['vendor_id'] : null,
-                createdById: $creatorId,
-                approvedItemIds: array_map('intval', $validated['approved_item_ids']),
-                poNotes: $validated['po_notes'] ?? null,
-                expectedDelivery: $validated['expected_delivery'] ?? null,
-            );
+            // ✅ 2-7. Lógica de generación de PDF (igual que antes)
+            $calculations = $this->calculationService->calculateForPO($po);
+            $company = $this->companyInfoService->getForPDF();
+            $poTerms = $this->getGeneralConditionsUseCase->execute('PurchaseOrder');
 
-            $poId = $this->generateUseCase->execute($dto);
+            // ✅ 2. Fallback a términos genéricos si no hay específicos
+            $terms = $poTerms
+                ?? $this->getGeneralConditionsUseCase->execute('General')
+                ?? config('pdf.default_terms.purchase_order', 'Términos por defecto...');
 
-            return response()->json([
-                'data' => ['id' => $poId],
-                'message' => 'Purchase order generated successfully'
-            ], 201);
-        } catch (ValidationException $e) {
-            return response()->json(['error' => $e->errors()], 422);
-        } catch (DomainException $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to generate purchase order'], 500);
-        }
-    }
+            $data = [
+                'po' => $po,
+                'calculations' => $calculations,
+                'company' => $company,
+                'terms_conditions' => $terms,
+                'generated_at' => now()->format('d/m/Y H:i'),
+                'footer_note' => 'Documento generado electrónicamente. Válido sin firma.',
+            ];
 
+            $pdf = PDF::loadView('pdf.purchase-order', $data)
+                ->setPaper(config('pdf.paper_size', 'letter'), config('pdf.orientation', 'portrait'))
+                ->setOption('isHtml5ParserEnabled', true)
+                ->setOption('isRemoteEnabled', config('pdf.allow_remote_images', true))
+                ->setOption('defaultFont', config('pdf.default_font', 'dejavu sans'));
 
+            $filename = sprintf('PO-%s-%s.pdf', $po->po_number, now()->format('Y-m-d'));
 
-    /**
-     * PATCH /api/purchase-orders/items/{itemId}/receive
-     */
-    public function receive(Request $request, int $itemId): JsonResponse
-    {
-        try {
-            $validated = $request->validate([
-                'received_qty' => 'required|numeric|min:0.01',
+            Log::info('PO PDF generated', [
+                'po_id' => $poId,
+                'po_number' => $po->po_number,
+                'project_id' => $projectId,
+                'file_size_kb' => round(strlen($pdf->output()) / 1024, 2),
             ]);
 
-            $this->repo->recordReception($itemId, (float) $validated['received_qty']);
-
-            // Opcional: fetch updated PO status to trigger auto-closure logic here or in a job
-
-            return response()->json(['message' => 'Reception recorded successfully']);
-        } catch (ValidationException $e) {
-            return response()->json(['error' => $e->errors()], 422);
-        } catch (InvalidArgumentException | DomainException $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to record reception'], 500);
-        }
-    }
-
-    /**
-     * POST /api/projects/{projectId}/purchase-orders/generate
-     * 
-     * Generate one or more Purchase Orders from approved material request items.
-     * Auto-splits items by vendor_id.
-     */
-    public function generate(Request $request, int $projectId): JsonResponse
-    {
-        try {
-            $validated = $request->validate([
-                'item_ids' => 'required|array|min:1',
-                'item_ids.*' => 'required|integer|exists:vtiger.material_request_items,id',
-                'vendor_id' => 'required|integer|exists:vtiger.vtiger_vendor,vendorid',
-                'expected_delivery' => 'nullable|date|after:today',
-                'notes' => 'nullable|string|max:1000',
-            ]);
-
-            $creatorId = CurrentUserService::idOr(1);
-
-            $dto = GeneratePurchaseOrderDto::fromValidatedData([
-                'vendor_id' => $validated['vendor_id'] ?? null,
-                'created_by_id' => $creatorId,
-                'approved_item_ids' => $validated['approved_item_ids'],
-                'po_notes' => $validated['po_notes'] ?? null,
-                'expected_delivery' => $validated['expected_delivery'] ?? null,
-            ]);
-
-            $poId = $this->generateUseCase->execute($dto);
-
-            return response()->json([
-                'message' => 'Purchase order generated successfully',
-                ['id' => $poId, 'po_number' => $dto->poNumber ?? null]
-            ], 201);
-        } catch (ValidationException $e) {
-            return response()->json(['error' => $e->errors()], 422);
-        } catch (DomainException $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
+            // ✅ Válido: BinaryFileResponse extiende Response
+            return $pdf->download($filename);
         } catch (\Throwable $e) {
-            Log::error('GeneratePO failed', ['error' => $e->getMessage()]);
-            return response()->json(['error' => 'Failed to generate purchase order'], 500);
+            Log::error('Error generating PO PDF', [
+                'po_id' => $poId,
+                'project_id' => $projectId,
+                'error_class' => get_class($e),
+                'error_message' => $e->getMessage(),
+            ]);
+
+            // ✅ Válido: JsonResponse extiende Response
+            return response()->json([
+                'message' => 'Failed to generate PDF',
+                'error' => app()->environment('production')
+                    ? 'An unexpected error occurred. Please try again later.'
+                    : $e->getMessage(),
+            ], 500);
         }
     }
 }

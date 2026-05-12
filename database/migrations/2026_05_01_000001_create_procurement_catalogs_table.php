@@ -7,11 +7,11 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     
-
+    protected $connection = 'vtiger'; 
 
     public function up(): void
     {
-        Schema::connection($this->connection)->create('procurement_catalogs', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('nova_procurement_catalogs', function (Blueprint $table) {
             $table->id();
             $table->string('category', 50);   // 'item_type', 'reason_type', 'unit', 'priority'
             $table->string('code', 50);       // 'material', 'missing', 'kg', 'urgent', etc.
@@ -25,6 +25,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::connection($this->connection)->dropIfExists('procurement_catalogs');
+        Schema::connection($this->connection)->dropIfExists('nova_procurement_catalogs');
     }
 };

@@ -260,4 +260,12 @@ interface UserRepositoryInterface
      * @return bool True if upgrade was successful
      */
     public function upgradePasswordHash(int $userId, string $plainPassword): bool;
+
+    /**
+     * Get the full name of a user by ID
+     *
+     * @param integer $userId
+     * @return string|null
+     */
+    public function getNameById(int $userId): ?string;
 }

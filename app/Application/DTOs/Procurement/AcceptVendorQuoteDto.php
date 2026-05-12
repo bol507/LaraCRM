@@ -5,7 +5,7 @@ namespace App\Application\DTOs\Procurement;
 class AcceptVendorQuoteDto {
     public function __construct(
         public readonly int $quoteId,
-        public readonly int $approvedByUserId,
-        public readonly ?string $notes = null,
+        public readonly int $acceptedBy,      // user who accepted the quote
+        public readonly ?string $notes = null // internal notes for the purchasing team
     ) {}
 }

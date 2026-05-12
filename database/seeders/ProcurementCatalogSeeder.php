@@ -40,7 +40,7 @@ class ProcurementCatalogSeeder extends Seeder
 
        
         foreach ($data as $row) {
-            DB::table('procurement_catalogs')->updateOrInsert(
+            DB::table('nova_procurement_catalogs')->updateOrInsert(
                 ['category' => $row['category'], 'code' => $row['code']],
                 $row
             );

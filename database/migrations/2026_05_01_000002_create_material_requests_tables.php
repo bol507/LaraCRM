@@ -11,7 +11,7 @@ return new class extends Migration
 
     public function up(): void
     {
-        Schema::connection($this->connection)->create('material_requests', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('nova_material_requests', function (Blueprint $table) {
             $table->id();
             $table->unsignedInteger('project_id'); // FK a vtiger_project.projectid
             $table->unsignedInteger('requested_by'); // FK a vtiger_users.id
@@ -26,10 +26,10 @@ return new class extends Migration
             $table->index('status');
         });
 
-        Schema::connection($this->connection)->create('material_request_items', function (Blueprint $table) {
+        Schema::connection($this->connection)->create('nova_material_request_items', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('request_id');
-            $table->foreign('request_id')->references('id')->on('material_requests')->onDelete('cascade');
+            $table->foreign('request_id')->references('id')->on('nova_material_requests')->onDelete('cascade');
 
             $table->string('catalog_item_type')->default('material');
             $table->string('catalog_reason_type')->default('new_requirement');
@@ -52,7 +52,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::connection($this->connection)->dropIfExists('material_request_items');
-        Schema::connection($this->connection)->dropIfExists('material_requests');
+        Schema::connection($this->connection)->dropIfExists('nova_material_request_items');
+        Schema::connection($this->connection)->dropIfExists('nova_material_requests');
     }
 };

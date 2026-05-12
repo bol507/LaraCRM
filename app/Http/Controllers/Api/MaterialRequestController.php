@@ -139,7 +139,7 @@ class MaterialRequestController extends Controller
             $validated = $request->validate([
 
                 'items' => 'required|array|min:1',
-                'items.*.itemId' => 'required|integer|exists:vtiger.material_request_items,id',
+                'items.*.itemId' => 'required|integer|exists:vtiger.nova_material_request_items,id',
                 'items.*.decision' => 'required|string|in:approve,reject,partial',
                 'items.*.approvedQuantity' => 'nullable|numeric|min:0',
 

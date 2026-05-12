@@ -11,7 +11,7 @@ return new class extends Migration
 
     public function up(): void
     {
-        Schema::connection($this->connection)->table('material_request_items', function (Blueprint $table) {
+        Schema::connection($this->connection)->table('nova_material_request_items', function (Blueprint $table) {
             $table->text('reason_other')->nullable()->after('catalog_reason_type')
                   ->comment('Custom justification when reason is "other"');
         });
@@ -19,7 +19,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::connection($this->connection)->table('material_request_items', function (Blueprint $table) {
+        Schema::connection($this->connection)->table('nova_material_request_items', function (Blueprint $table) {
             $table->dropColumn('reason_other');
         });
     }

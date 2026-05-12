@@ -7,6 +7,7 @@ use App\Application\UseCases\Core\Entity\UpdateEntityUseCase;
 use App\Infrastructure\Repositories\QuoteRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -17,21 +18,6 @@ class UpdateQuoteUseCase
         private readonly QuoteRepository $quote,
     ) {}
 
-    /**
-     * Execute the quote update use case
-     *
-     * DML orchestration:
-     * 1. Validate that the quote exists
-     * 2. Update vtiger_quotes (quote data)
-     * 3. Update vtiger_crmentity (label + modifiedby)
-     *
-     * @param  UpdateQuoteRequest  $request  The request with update data
-     * @param  int|null  $modifiedByUserId  User performing the update
-     * @return bool True if updated successfully
-     *
-     * @throws InvalidArgumentException If the quote ID is missing
-     * @throws RuntimeException If the update fails
-     */
     public function execute(UpdateQuoteRequest $request, ?int $modifiedByUserId = null): bool
     {
         $quoteId = $request->quoteid;
@@ -42,29 +28,42 @@ class UpdateQuoteUseCase
 
         $userId = $modifiedByUserId ?? CurrentUserService::idOr(1);
 
-        // Validate that the quote exists
         if (! $this->quote->exists($quoteId)) {
             throw new InvalidArgumentException('Quote not found');
         }
 
-        // Prepare data for update using DTO fields
-        $data = [
-            'subject' => $request->subject,
-            'potentialid' => $request->potentialid,
-            'quotestage' => $request->quote_stage ?? null,
-            'validtill' => $request->validtill ?? null,
-            'accountid' => $request->accountid ?? null,
-        ];
+        
+        return DB::connection('vtiger')->transaction(function () use ($request, $quoteId, $userId) {
+            
+           
+            $this->quote->update($request, $userId);
 
-        // Filter out null values
-        $data = array_filter($data, fn ($v) => $v !== null);
+            $crmentityData = [];
 
-        $success = $this->quote->update($request, $userId);
+            if ($request->subject !== null) {
+                $crmentityData['label'] = $request->subject;
+            }
+            if ($request->description !== null) {
+                $crmentityData['description'] = $request->description;
+            }
+            if (isset($request->assigned_user_id)) {
+                $crmentityData['smownerid'] = $request->assigned_user_id;
+            }
 
-        // Register activity
-        $this->logActivity($quoteId, $userId);
+           
+            if (! empty($crmentityData)) {
+                $this->updateEntity->execute(
+                    crmId: $quoteId,
+                    data: $crmentityData,
+                    userId: $userId
+                );
+            }
 
-        return $success;
+            
+            $this->logActivity($quoteId, $userId);
+
+            return true;
+        });
     }
 
     private function logActivity(int $quoteId, int $userId): void

@@ -33,7 +33,7 @@ class QuoteRepository implements QuoteRepositoryInterface
         $quoteId = $this->generateQuoteId();
         $subtotal = 0;
         $itemsWithTotals = [];
-        
+
         if (! empty($request->items)) {
             foreach ($request->items as $item) {
                 $netprice = $item['listprice'] * (1 - ($item['discount_percent'] ?? 0) / 100);
@@ -54,7 +54,7 @@ class QuoteRepository implements QuoteRepositoryInterface
 
         $itbms = $subtotal * self::TAX;
         $totalWithTax = $subtotal + $itbms;
-        
+
         DB::connection(self::CONNECTION)->transaction(function () use ($request, $createdByUserId, $quoteId, $subtotal, $totalWithTax, $itbms, $itemsWithTotals) {
             // Insert into vtiger_quotes
             DB::connection(self::CONNECTION)->table(self::TABLE)->insert([
@@ -98,7 +98,7 @@ class QuoteRepository implements QuoteRepositoryInterface
                 'modifiedby' => $createdByUserId,
                 'deleted' => 0,
             ]);
-            
+
             foreach ($itemsWithTotals as $item) {
                 DB::connection(self::CONNECTION)
                     ->table('vtiger_inventoryproductrel')
@@ -144,23 +144,6 @@ class QuoteRepository implements QuoteRepositoryInterface
                     ->update($updateData);
             }
 
-            // Update vtiger_crmentity
-            $crmentityData = [
-                'modifiedtime' => now()->format('Y-m-d H:i:s'),
-                'modifiedby' => $modifiedByUserId
-            ];
-
-            if ($request->subject !== null) {
-                $crmentityData['label'] = $request->subject;
-            }
-            // description in vtiger_crmentity
-            if (isset($request->description)) {
-                $crmentityData['description'] = $request->description;
-            }
-
-            DB::connection(self::CONNECTION)->table('vtiger_crmentity')
-                ->where('crmid', $quoteId)
-                ->update($crmentityData);
 
             // Update line items if provided
             if (isset($request->items)) {
@@ -200,7 +183,7 @@ class QuoteRepository implements QuoteRepositoryInterface
                 $updateData['compound_taxes_info'] = json_encode(['tax1' => $taxAmount]);
                 $updateData['pre_tax_total'] = $subtotal;
             }
-            
+
             if (! empty($updateData)) {
                 DB::connection(self::CONNECTION)->table(self::TABLE)
                     ->where('quoteid', $quoteId)
@@ -270,7 +253,7 @@ class QuoteRepository implements QuoteRepositoryInterface
                     'discount_percent' => $discountPercent,
                     'netprice' => $netprice,
                     'total' => $total,
-                    'description' => $description, 
+                    'description' => $description,
                     'comment' => $item->comment ?? null,
                 ];
             })

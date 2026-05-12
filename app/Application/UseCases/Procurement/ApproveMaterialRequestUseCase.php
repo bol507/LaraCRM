@@ -5,9 +5,10 @@ namespace App\Application\UseCases\Procurement;
 
 use App\Application\DTOs\Procurement\ApproveMaterialRequestDto;
 use App\Application\Repositories\MaterialRequestRepositoryInterface;
-use App\Domain\Events\MaterialRequestApprovedEvent;
+use App\Domain\Events\MaterialRequestApproved;
 use DomainException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use InvalidArgumentException;
 
 class ApproveMaterialRequestUseCase
@@ -33,31 +34,30 @@ class ApproveMaterialRequestUseCase
                 throw new DomainException('At least one item decision is required');
             }
 
-            // ✅ Contadores para determinar el estado final de la cabecera
             $approvedCount = 0;
             $rejectedCount = 0;
             $partialCount = 0;
             $totalDecisions = count($dto->itemDecisions);
 
-            // 1. ✅ Aplicar decisiones a cada ítem con lógica explícita por acción
+            // 1. Apply decisions to each item with explicit logic per action
             foreach ($dto->itemDecisions as $decision) {
                 $action = $decision['action'];
                 $itemId = $decision['itemId'];
                 
-                // ✅ Determinar estado y cantidad aprobada según la acción
+                // Determine status and approved quantity based on the action
                 [$newItemStatus, $approvedQty] = match ($action) {
                     'approve' => ['approved', $decision['quantity'] ?? null],
-                    'partial' => ['partially_approved', $decision['quantity'] ?? 0], // ✅ Usa cantidad explícita
+                    'partial' => ['partially_approved', $decision['quantity'] ?? 0], // Uses explicit quantity
                     'reject' => ['rejected', 0],
                     default => throw new InvalidArgumentException("Invalid action: {$action}"),
                 };
 
-                // ✅ Validación: 'partial' requiere cantidad explícita
+                // Validation: 'partial' requires explicit quantity
                 if ($action === 'partial' && ($approvedQty === null || $approvedQty <= 0)) {
                     throw new DomainException("Partial approval requires a positive quantity for item #{$itemId}");
                 }
 
-                // ✅ Actualizar ítem en BD
+                // Update item in database
                 $this->requestRepo->updateItemStatus(
                     itemId: $itemId,
                     status: $newItemStatus,
@@ -65,7 +65,7 @@ class ApproveMaterialRequestUseCase
                     approvedBy: $dto->approverId
                 );
 
-                // ✅ Contar para cálculo del estado final
+                // Count for final status calculation
                 match ($action) {
                     'approve' => $approvedCount++,
                     'partial' => $partialCount++,
@@ -73,19 +73,19 @@ class ApproveMaterialRequestUseCase
                 };
             }
 
-            // 2. ✅ Calcular nuevo estado de la cabecera considerando parciales
+            // 2. Calculate new header status considering partial approvals
             $newRequestStatus = match (true) {
-                // Todos rechazados → solicitud rechazada
+                // All rejected -> request rejected
                 $rejectedCount === $totalDecisions => 'rejected',
                 
-                // Todos aprobados (sin parciales ni rechazados) → aprobada
+                // All approved (no partials or rejects) -> approved
                 $approvedCount === $totalDecisions => 'approved',
                 
-                // Mezcla de estados o algún parcial → parcialmente aprobada
+                // Mixed states or any partial -> partially approved
                 default => 'partially_approved',
             };
 
-            // 3. ✅ Actualizar cabecera con estado calculado
+            // 3. Update header with calculated status
             $this->requestRepo->updateStatus(
                 id: $dto->requestId,
                 status: $newRequestStatus,
@@ -93,8 +93,17 @@ class ApproveMaterialRequestUseCase
                 notes: $newRequestStatus === 'rejected' ? $dto->notes : null
             );
 
-            // 🔔 Placeholder para WebSocket
-            // event(new MaterialRequestApprovedEvent($dto->requestId, $newRequestStatus));
+            Event::dispatch(new MaterialRequestApproved(
+                requestId: $dto->requestId,
+                projectId: $request->project_id,
+                approvedBy: $dto->approverId,
+                status: $newRequestStatus,
+                requestData: [
+                    'requested_by' => $request->requested_by,
+                    'approved_by_name' => $dto->approverName ?? null,
+                    'notes' => $dto->notes,
+                ]
+            ));
 
             return true;
         });

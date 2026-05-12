@@ -3,4 +3,5 @@
 return [
     App\Providers\AppServiceProvider::class,
     App\Providers\VtigerUserProvider::class,
+    App\Providers\EventServiceProvider::class,
 ];

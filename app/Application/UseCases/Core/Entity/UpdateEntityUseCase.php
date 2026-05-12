@@ -51,9 +51,7 @@ class UpdateEntityUseCase
             $sanitized['modifiedby'] = $userId;
         }
 
-        return DB::connection('vtiger')->transaction(function () use ($crmId, $sanitized) {
-            return $this->crmentity->update($crmId, $sanitized);
-        });
+        return $this->crmentity->update($crmId, $sanitized);
     }
 
     /**

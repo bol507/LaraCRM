@@ -4,7 +4,9 @@ namespace App\Application\UseCases\Comment;
 
 use App\Application\DTOs\Comment\CreateCommentRequest;
 use App\Application\UseCases\Core\Entity\CreateEntityUseCase;
+use App\Application\ValueObjects\Comment\CommentModule;
 use App\Domain\Entities\Comment;
+use App\Domain\Exceptions\Comment\CommentTargetNotFoundException;
 use App\Infrastructure\Repositories\CommentRepository;
 use App\Services\CurrentUserService;
 use App\Services\VtigerActivityTracker;
@@ -37,6 +39,7 @@ class CreateCommentUseCase
     public function execute(CreateCommentRequest $request): Comment
     {
         $this->validateBusinessRules($request);
+        $this->validateRelatedRecord($request);
 
         $userId = $request->userId ?? CurrentUserService::idOr(1);
         $now = now()->format('Y-m-d H:i:s');
@@ -109,8 +112,8 @@ class CreateCommentUseCase
             ]);
         }
 
-        $allowedModules = ['Project', 'Quotes', 'Calendar', 'Accounts', 'Contacts', 'HelpDesk'];
-        if (! in_array($request->module, $allowedModules, true)) {
+        $allowedModules = CommentModule::all();
+        if (! CommentModule::isSupported($request->module)) {
             throw new InvalidArgumentException(
                 "Module '{$request->module}' not allowed for comments. " .
                 'Valid modules: ' . implode(', ', $allowedModules)
@@ -127,6 +130,29 @@ class CreateCommentUseCase
 
         if ($request->parentCommentId !== null && $request->parentCommentId <= 0) {
             throw new InvalidArgumentException('Parent comment ID must be positive');
+        }
+    }
+
+    /**
+     * Validate that the related record exists and matches the given module.
+     *
+     * @throws CommentTargetNotFoundException If the record does not exist or is deleted
+     * @throws InvalidArgumentException If the record exists but belongs to another module
+     */
+    private function validateRelatedRecord(CreateCommentRequest $request): void
+    {
+        $recordSetype = $this->comment->relatedRecordSetype($request->relatedId);
+
+        if ($recordSetype === null) {
+            throw CommentTargetNotFoundException::for($request->module, $request->relatedId);
+        }
+
+        $expectedSetype = CommentModule::toSetype($request->module);
+        if ($recordSetype !== $expectedSetype) {
+            throw new InvalidArgumentException(
+                "Related record {$request->relatedId} is a {$recordSetype}, " .
+                "not a {$request->module}. Cannot attach a comment to a different module."
+            );
         }
     }
 

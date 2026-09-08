@@ -40,6 +40,7 @@ class CreateCommentUseCase
     {
         $this->validateBusinessRules($request);
         $this->validateRelatedRecord($request);
+        $this->validateParentComment($request);
 
         $userId = $request->userId ?? CurrentUserService::idOr(1);
         $now = now()->format('Y-m-d H:i:s');
@@ -130,6 +131,34 @@ class CreateCommentUseCase
 
         if ($request->parentCommentId !== null && $request->parentCommentId <= 0) {
             throw new InvalidArgumentException('Parent comment ID must be positive');
+        }
+    }
+
+    /**
+     * Validate that the parent comment (for threaded replies) exists and
+     * belongs to the same related record.
+     *
+     * @throws ValidationException If the parent comment does not exist or
+     *                             belongs to a different record
+     */
+    private function validateParentComment(CreateCommentRequest $request): void
+    {
+        if ($request->parentCommentId === null) {
+            return;
+        }
+
+        $parent = $this->comment->findById($request->parentCommentId);
+
+        if ($parent === null) {
+            throw ValidationException::withMessages([
+                'parent_comment_id' => ['Parent comment does not exist'],
+            ]);
+        }
+
+        if ((int) $parent->related_to !== $request->relatedId) {
+            throw ValidationException::withMessages([
+                'parent_comment_id' => ['Parent comment does not belong to this record'],
+            ]);
         }
     }
 

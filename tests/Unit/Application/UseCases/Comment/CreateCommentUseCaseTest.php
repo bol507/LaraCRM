@@ -158,6 +158,118 @@ class CreateCommentUseCaseTest extends TestCase
     }
 
     #[\PHPUnit\Framework\Attributes\Test]
+    public function rejects_reply_when_parent_comment_does_not_exist(): void
+    {
+        $request = new CreateCommentRequest(
+            module: 'Potentials',
+            relatedId: 55,
+            content: 'Reply to parent',
+            userId: 7,
+            parentCommentId: 999,
+        );
+
+        $this->commentRepoMock
+            ->expects($this->once())
+            ->method('relatedRecordSetype')
+            ->with(55)
+            ->willReturn('Potentials');
+
+        $this->commentRepoMock
+            ->expects($this->once())
+            ->method('findById')
+            ->with(999)
+            ->willReturn(null);
+
+        $this->expectException(ValidationException::class);
+        $this->useCase->execute($request);
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function rejects_reply_when_parent_comment_belongs_to_another_record(): void
+    {
+        $request = new CreateCommentRequest(
+            module: 'Potentials',
+            relatedId: 55,
+            content: 'Reply to parent',
+            userId: 7,
+            parentCommentId: 100,
+        );
+
+        $this->commentRepoMock
+            ->expects($this->once())
+            ->method('relatedRecordSetype')
+            ->with(55)
+            ->willReturn('Potentials');
+
+        $parent = new \stdClass();
+        $parent->related_to = 66;
+
+        $this->commentRepoMock
+            ->expects($this->once())
+            ->method('findById')
+            ->with(100)
+            ->willReturn($parent);
+
+        $this->expectException(ValidationException::class);
+        $this->useCase->execute($request);
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function creates_reply_when_parent_belongs_to_record(): void
+    {
+        $request = new CreateCommentRequest(
+            module: 'Potentials',
+            relatedId: 55,
+            content: 'Reply with valid parent',
+            userId: 7,
+            parentCommentId: 100,
+        );
+
+        $expectedId = 5002;
+
+        $this->commentRepoMock
+            ->expects($this->once())
+            ->method('relatedRecordSetype')
+            ->with(55)
+            ->willReturn('Potentials');
+
+        $parent = new \stdClass();
+        $parent->related_to = 55;
+
+        $this->commentRepoMock
+            ->expects($this->once())
+            ->method('findById')
+            ->with(100)
+            ->willReturn($parent);
+
+        $this->createEntityMock
+            ->expects($this->once())
+            ->method('execute')
+            ->willReturn($expectedId);
+
+        $this->commentRepoMock
+            ->expects($this->once())
+            ->method('insert');
+
+        $tableMock = $this->createMock(Builder::class);
+        $tableMock->method('insertGetId')->willReturn(1);
+
+        $connectionMock = $this->createMock(Connection::class);
+        $connectionMock->method('transaction')->willReturnCallback(
+            fn (callable $callback) => $callback()
+        );
+        $connectionMock->method('table')->willReturn($tableMock);
+
+        DB::shouldReceive('connection')->with('vtiger')->andReturn($connectionMock);
+
+        $comment = $this->useCase->execute($request);
+
+        $this->assertInstanceOf(Comment::class, $comment);
+        $this->assertSame($expectedId, $comment->getId());
+        $this->assertSame(100, $comment->getParentCommentId());
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
     public function creates_comment_when_target_is_valid(): void
     {
         $request = new CreateCommentRequest(

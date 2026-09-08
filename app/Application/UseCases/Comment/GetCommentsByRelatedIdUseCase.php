@@ -3,7 +3,9 @@
 namespace App\Application\UseCases\Comment;
 
 use App\Application\Repositories\CommentRepositoryInterface;
+use App\Application\ValueObjects\Comment\CommentModule;
 use App\Domain\Entities\Comment;
+use App\Domain\Exceptions\Comment\CommentTargetNotFoundException;
 use App\Application\DTOs\Comment\CommentDto;
 use Illuminate\Pagination\LengthAwarePaginator;
 use InvalidArgumentException;
@@ -106,8 +108,44 @@ class GetCommentsByRelatedIdUseCase
         int $perPage = 50
     ): LengthAwarePaginator {
         
-        $this->validateParameters($relatedId, $page, $perPage);        
+        $this->validateParameters($relatedId, $page, $perPage);
+        $this->validateRelatedRecord($relatedId, $module);
         return $this->repository->getByRelatedId($relatedId, $module, $page, $perPage);
+    }
+
+    /**
+     * Validate that the module supports comments and the related record
+     * exists with a matching setype.
+     *
+     * @param int $relatedId ID of the related record
+     * @param string $module Module type of the related record
+     * @return void
+     *
+     * @throws InvalidArgumentException If the module is not supported or the
+     *                                  record belongs to another module
+     * @throws CommentTargetNotFoundException If the record does not exist or is deleted
+     */
+    protected function validateRelatedRecord(int $relatedId, string $module): void
+    {
+        if (! CommentModule::isSupported($module)) {
+            throw new InvalidArgumentException(
+                "Module '{$module}' not allowed for comments. " .
+                'Valid modules: ' . implode(', ', CommentModule::all())
+            );
+        }
+
+        $recordSetype = $this->repository->relatedRecordSetype($relatedId);
+
+        if ($recordSetype === null) {
+            throw CommentTargetNotFoundException::for($module, $relatedId);
+        }
+
+        if ($recordSetype !== CommentModule::toSetype($module)) {
+            throw new InvalidArgumentException(
+                "Related record {$relatedId} is a {$recordSetype}, " .
+                "not a {$module}. Cannot list comments for a different module."
+            );
+        }
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Infrastructure\Repositories;
 
 use App\Application\Repositories\CommentRepositoryInterface;
+use App\Application\ValueObjects\Comment\CommentModule;
 use App\Domain\Entities\Comment;
 use App\Infrastructure\Mappers\CommentMapper;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -119,16 +120,7 @@ class CommentRepository implements CommentRepositoryInterface
         int $page = 1,
         int $perPage = 50
     ): LengthAwarePaginator {
-        $mapModuleToSetype = [
-            'Project' => 'Project',
-            'Quotes' => 'Quotes',
-            'Calendar' => 'Calendar',
-            'Accounts' => 'Accounts',
-            'Contacts' => 'Contacts',
-            'HelpDesk' => 'HelpDesk',
-        ];
-
-        $setype = $mapModuleToSetype[$module] ?? $module;
+        $setype = CommentModule::toSetype($module);
 
         $query = DB::connection('vtiger')
             ->table('vtiger_modcomments')
@@ -315,16 +307,7 @@ class CommentRepository implements CommentRepositoryInterface
      */
     public function countByRelatedId(int $relatedId, string $module): int
     {
-        $mapModuleToSetype = [
-            'Project' => 'Project',
-            'Quotes' => 'Quotes',
-            'Calendar' => 'Calendar',
-            'Accounts' => 'Accounts',
-            'Contacts' => 'Contacts',
-            'HelpDesk' => 'HelpDesk',
-        ];
-
-        $setype = $mapModuleToSetype[$module] ?? $module;
+        CommentModule::toSetype($module);
 
         return DB::connection('vtiger')
             ->table('vtiger_modcomments')
@@ -332,6 +315,24 @@ class CommentRepository implements CommentRepositoryInterface
             ->where('vtiger_modcomments.related_to', $relatedId)
             ->where('vtiger_crmentity.deleted', 0)
             ->count();
+    }
+
+    /**
+     * Resolve the setype of the record a comment would relate to.
+     *
+     * @param int $relatedId ID of the related record
+     * @return string|null The vtiger_crmentity.setype if the record exists and
+     *                     is not deleted, null otherwise
+     */
+    public function relatedRecordSetype(int $relatedId): ?string
+    {
+        $setype = DB::connection(self::CONNECTION)
+            ->table(self::TABLE_CRMENTITY)
+            ->where('crmid', $relatedId)
+            ->where('deleted', 0)
+            ->value('setype');
+
+        return $setype ?: null;
     }
 
     /**

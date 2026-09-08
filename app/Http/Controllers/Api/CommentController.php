@@ -9,6 +9,7 @@ use App\Application\UseCases\Comment\GetCommentsByRelatedIdUseCase;
 use App\Application\UseCases\Comment\UpdateCommentUseCase;
 use App\Application\UseCases\Comment\DeleteCommentUseCase;
 use App\Application\UseCases\Comment\GetCommentUseCase;
+use App\Domain\Exceptions\Comment\CommentTargetNotFoundException;
 use App\Http\Controllers\Controller;
 use App\Infrastructure\Mappers\CommentMapper;
 use App\Services\CurrentUserService;
@@ -124,6 +125,9 @@ class CommentController extends Controller
         } catch (InvalidArgumentException $e) {
             //  Invalid input parameters (400 Bad Request)
             return response()->json(['error' => $e->getMessage()], 400);
+        } catch (CommentTargetNotFoundException $e) {
+            //  Related record not found (404 Not Found)
+            return response()->json(['error' => $e->getMessage()], 404);
         } catch (RuntimeException $e) {
             //  Database or infrastructure error (500 Internal Server Error)
             return response()->json([
@@ -188,6 +192,11 @@ class CommentController extends Controller
             return response()->json([
                 'error' => 'Invalid request: ' . $e->getMessage(),
             ], 400);
+        } catch (CommentTargetNotFoundException $e) {
+            //  Related record not found (404 Not Found)
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 404);
         } catch (Exception $e) {
             //  Log error with context for debugging
             Log::error('Error creating comment: ' . $e->getMessage(), [

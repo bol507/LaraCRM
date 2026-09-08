@@ -132,6 +132,15 @@ interface CommentRepositoryInterface
     public function canAccess(int $commentId, int $userId): bool;
 
     /**
+     * Resolve the setype of the record a comment relates to.
+     *
+     * @param int $relatedId ID of the related record
+     * @return string|null The vtiger_crmentity.setype if the record exists and
+     *                     is not deleted, null otherwise
+     */
+    public function relatedRecordSetype(int $relatedId): ?string;
+
+    /**
      * Find a comment including soft-deleted ones
      * 
      * @param int $commentId The comment ID to find

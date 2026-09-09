@@ -28,16 +28,16 @@ class CommentMapper
     public static function fromDatabaseRow(object $row): Comment
     {
         return new Comment(
-            commentid: (int) ($row['modcommentsid'] ?? $row['commentid'] ?? $row['id'] ?? 0),
-            commentcontent: (string) ($row['commentcontent'] ?? $row['content'] ?? ''),
-            related_to: (int) ($row['related_to'] ?? $row['taskId'] ?? 0),
-            parent_comments: isset($row['parent_comments']) ? (int) $row['parent_comments'] : null,
-            customer: isset($row['customer']) ? (int) $row['customer'] : null,
-            userid: isset($row['userid']) ? (int) $row['userid'] : null,
-            reasontoedit: $row['reasontoedit'] ?? null,
-            is_private: isset($row['is_private']) ? (int) $row['is_private'] : 0,
-            filename: $row['filename'] ?? $row['attachment'] ?? null,
-            related_email_id: isset($row['related_email_id']) ? (int) $row['related_email_id'] : null,
+            commentid: (int) ($row->modcommentsid ?? $row->commentid ?? $row->id ?? 0),
+            commentcontent: (string) ($row->commentcontent ?? $row->content ?? ''),
+            related_to: (int) ($row->related_to ?? $row->taskId ?? 0),
+            parent_comments: isset($row->parent_comments) ? (int) $row->parent_comments : null,
+            customer: isset($row->customer) ? (int) $row->customer : null,
+            userid: isset($row->userid) ? (int) $row->userid : null,
+            reasontoedit: $row->reasontoedit ?? null,
+            is_private: isset($row->is_private) ? (int) $row->is_private : 0,
+            filename: $row->filename ?? $row->attachment ?? null,
+            related_email_id: isset($row->related_email_id) ? (int) $row->related_email_id : null,
         );
     }
 

@@ -11,7 +11,6 @@ use App\Application\UseCases\Comment\DeleteCommentUseCase;
 use App\Application\UseCases\Comment\GetCommentUseCase;
 use App\Domain\Exceptions\Comment\CommentTargetNotFoundException;
 use App\Http\Controllers\Controller;
-use App\Infrastructure\Mappers\CommentMapper;
 use App\Services\CurrentUserService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -46,6 +45,28 @@ use RuntimeException;
  */
 class CommentController extends Controller
 {
+
+    private const RELATED_ENTITY_TYPE = [
+        'Project' => 'Proyecto',
+        'Calendar' => 'Tarea',
+        'Tasks' => 'Tarea',
+        'Quotes' => 'Cotización',
+        'Accounts' => 'Cliente',
+        'Contacts' => 'Contacto',
+        'Potentials' => 'Oportunidad',
+        'HelpDesk' => 'Ticket',
+    ];
+
+    private const RELATED_ENTITY_ICON = [
+        'Project' => '📋',
+        'Calendar' => '✓',
+        'Tasks' => '✓',
+        'Quotes' => '📄',
+        'Accounts' => '🏢',
+        'Contacts' => '👤',
+        'Potentials' => '💰',
+        'HelpDesk' => '🎫',
+    ];
 
 
 
@@ -252,13 +273,13 @@ class CommentController extends Controller
     {
         try {
             $userId = CurrentUserService::idOr(1);
-            $comment = $this->getCommentUseCase->execute(
+            $dto = $this->getCommentUseCase->execute(
                 commentId: $id,
                 userId: $userId
             );
 
 
-            return response()->json(CommentMapper::toArray($comment));
+            return response()->json($this->buildDetailResponse($dto));
         } catch (InvalidArgumentException $e) {
             // Invalid ID or unauthorized access
             return response()->json([
@@ -274,6 +295,52 @@ class CommentController extends Controller
             return response()->json([
                 'error' => 'Error fetching comment: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Build the JSON response body for a comment detail endpoint.
+     *
+     * Maps a CommentDto to the shape consumed by the frontend CommentDetail
+     * (id, relatedToId, authorName, isReply, attachment, hasAttachment,
+     * formattedCreatedAt, relatedEntityType/Icon, etc.).
+     */
+    private function buildDetailResponse(CommentDto $dto): array
+    {
+        return [
+            'id' => $dto->id,
+            'relatedToId' => $dto->relatedTo,
+            'taskId' => $dto->relatedTo,
+            'relatedModule' => $dto->relatedModule,
+            'content' => $dto->content,
+            'authorName' => $dto->userName ?? 'User',
+            'userName' => $dto->userName,
+            'userEmail' => $dto->userEmail,
+            'userId' => $dto->userId,
+            'createdAt' => $dto->createdAt,
+            'updatedAt' => $dto->updatedAt,
+            'formattedCreatedAt' => $this->formatCreatedAt($dto->createdAt),
+            'isPrivate' => $dto->isPrivate,
+            'isReply' => $dto->parentCommentId !== null,
+            'parentCommentId' => $dto->parentCommentId,
+            'attachment' => $dto->filename,
+            'reasonToEdit' => $dto->reasonToEdit,
+            'hasAttachment' => !empty($dto->filename),
+            'relatedEntityType' => self::RELATED_ENTITY_TYPE[$dto->relatedModule] ?? 'Entity',
+            'relatedEntityIcon' => self::RELATED_ENTITY_ICON[$dto->relatedModule] ?? '🔗',
+        ];
+    }
+
+    private function formatCreatedAt(?string $createdAt): ?string
+    {
+        if (!$createdAt) {
+            return null;
+        }
+
+        try {
+            return (new \DateTimeImmutable($createdAt))->format('d/m/Y H:i');
+        } catch (\Exception) {
+            return $createdAt;
         }
     }
 

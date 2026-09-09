@@ -2,8 +2,10 @@
 
 namespace App\Application\UseCases\Comment;
 
+use App\Application\DTOs\Comment\CommentDto;
 use App\Application\Repositories\CommentRepositoryInterface;
 use App\Domain\Entities\Comment;
+use App\Infrastructure\Mappers\CommentMapper;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -58,7 +60,7 @@ class GetCommentUseCase
      * @param int $commentId Unique identifier of the comment to retrieve
      * @param int $userId ID of the user requesting the comment (for authorization)
      * 
-     * @return Comment The comment entity if found and accessible
+     * @return CommentDto The comment DTO if found and accessible
      * 
      * @throws InvalidArgumentException If comment ID is invalid
      * @throws RuntimeException If comment is not found
@@ -77,19 +79,19 @@ class GetCommentUseCase
      *     return response()->json(['error' => $e->getMessage()], 404);
      * }
      */
-    public function execute(int $commentId, int $userId): Comment
+    public function execute(int $commentId, int $userId): CommentDto
     {
         
         $this->validateParameters($commentId, $userId);
-        $comment = $this->repository->findById($commentId);
+        $row = $this->repository->findById($commentId);
         
-        if (!$comment) {
+        if (!$row) {
             throw new RuntimeException("Comment {$commentId} not found or has been deleted");
         }
 
-        $this->verifyViewPermission($comment, $userId);
+        $this->verifyViewPermission(CommentMapper::fromDatabaseRow($row), $userId);
 
-        return $comment;
+        return CommentDto::fromDatabaseRow($row);
     }
 
     /**
